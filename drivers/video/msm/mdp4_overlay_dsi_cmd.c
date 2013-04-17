@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -228,8 +228,10 @@ void mdp4_dsi_cmd_pipe_queue(int cndx, struct mdp4_overlay_pipe *pipe)
 
 	vctrl = &vsync_ctrl_db[cndx];
 
-	if (atomic_read(&vctrl->suspend) > 0)
+	if (atomic_read(&vctrl->suspend)) {
+		pr_err("%s: suspended, no more pipe queue\n", __func__);
 		return;
+	}
 
 	mutex_lock(&vctrl->update_lock);
 	undx =  vctrl->update_ndx;
@@ -271,10 +273,11 @@ int mdp4_dsi_cmd_pipe_commit(int cndx, int wait)
 	pipe = vctrl->base_pipe;
 	mixer = pipe->mixer_num;
 
-	if (vp->update_cnt == 0) {
-		mutex_unlock(&vctrl->update_lock);
-		return cnt;
-	}
+	/*
+	 * allow stage_commit without pipes queued
+	 * (vp->update_cnt == 0) to unstage pipes after
+	 * overlay_unset
+	 */
 
 	vctrl->update_ndx++;
 	vctrl->update_ndx &= 0x01;
@@ -373,7 +376,7 @@ int mdp4_dsi_cmd_pipe_commit(int cndx, int wait)
 		vsync_irq_enable(INTR_DMA_P_DONE, MDP_DMAP_TERM);
 		vctrl->dmap_koff++;
 	}
-	pr_debug("%s: kickoff\n", __func__);
+	pr_debug("%s: kickoff, pid=%d\n", __func__, current->pid);
 	/* kickoff overlay engine */
 	mdp4_stat.kickoff_ov0++;
 	outpdw(MDP_BASE + 0x0004, 0);
@@ -641,7 +644,6 @@ static void clk_ctrl_work(struct work_struct *work)
 		vctrl->clk_enabled = 0;
 		vctrl->clk_control = 0;
 		spin_unlock_irqrestore(&vctrl->spin_lock, flags);
-		pr_debug("%s: SET_CLK_OFF\n", __func__);
 		/* make sure dsi link is idle */
 		mipi_dsi_mdp_busy_wait();
 		mipi_dsi_clk_cfg(0);
@@ -857,6 +859,9 @@ static void mdp4_overlay_update_dsi_cmd(struct msm_fb_data_type *mfd)
 	} else {
 		pipe = vctrl->base_pipe;
 	}
+
+	/* TE enabled */
+	mdp4_mipi_vsync_enable(mfd, pipe, 0);
 
 	MDP_OUTP(MDP_BASE + 0x021c, 10); /* read pointer */
 
@@ -1199,11 +1204,11 @@ void mdp4_dsi_cmd_overlay(struct msm_fb_data_type *mfd)
 
 	mutex_lock(&mfd->dma->ov_mutex);
 	mdp4_overlay_mdp_perf_upd(mfd, 1);
-
 	mdp4_dsi_cmd_pipe_commit(cndx, 0);
 
 	mdp4_dsi_cmd_wait4vsync(cndx);
 
 	mdp4_overlay_mdp_perf_upd(mfd, 0);
 	mutex_unlock(&mfd->dma->ov_mutex);
+
 }
