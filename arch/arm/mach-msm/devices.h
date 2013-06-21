@@ -198,12 +198,14 @@ extern struct platform_device msm_device_ssbi6;
 extern struct platform_device msm_device_ssbi7;
 
 extern struct platform_device msm_gsbi1_qup_spi_device;
+#if defined(CONFIG_LGE_BROADCAST_TDMB) || defined(CONFIG_LGE_BROADCAST_1SEG) ||  defined(CONFIG_LGE_BROADCAST_DCM)
+extern struct platform_device msm_gsbi11_qup_spi_device;
+#endif	/*                           */
 
 extern struct platform_device msm_device_vidc_720p;
 
 extern struct platform_device msm_pcm;
 extern struct platform_device msm_multi_ch_pcm;
-extern struct platform_device msm_lowlatency_pcm;
 extern struct platform_device msm_pcm_routing;
 extern struct platform_device msm_cpudai0;
 extern struct platform_device msm_cpudai1;
@@ -267,7 +269,6 @@ extern struct platform_device apq_voip;
 extern struct platform_device apq_lpa_pcm;
 extern struct platform_device apq_compr_dsp;
 extern struct platform_device apq_multi_ch_pcm;
-extern struct platform_device apq_lowlatency_pcm;
 extern struct platform_device apq_pcm_hostless;
 extern struct platform_device apq_cpudai_afe_01_rx;
 extern struct platform_device apq_cpudai_afe_01_tx;
@@ -377,7 +378,6 @@ extern struct platform_device msm_bus_8064_sys_fpb;
 extern struct platform_device msm_bus_8064_cpss_fpb;
 
 extern struct platform_device mdm_8064_device;
-extern struct platform_device i2s_mdm_8064_device;
 extern struct platform_device msm_dsps_device_8064;
 extern struct platform_device *msm_8974_stub_regulator_devices[];
 extern int msm_8974_stub_regulator_devices_len;
@@ -433,14 +433,3 @@ extern struct platform_device msm8930_device_acpuclk;
 extern struct platform_device msm8930aa_device_acpuclk;
 extern struct platform_device msm8960_device_acpuclk;
 extern struct platform_device msm9615_device_acpuclk;
-
-extern struct platform_device apq8064_msm_mpd_device;
-
-extern struct platform_device msm_gpio_device;
-
-extern struct platform_device apq_cpudai_mi2s;
-extern struct platform_device apq_cpudai_i2s_rx;
-extern struct platform_device apq_cpudai_i2s_tx;
-
-extern struct platform_device dsda_mdm_8064_device;
-extern struct platform_device dsda_qsc_8064_device;

@@ -129,6 +129,40 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
+#if 1 /*                                               */
+#ifdef CONFIG_LGE_PM
+	POWER_SUPPLY_PROP_BATTERY_ID_CHECK,
+#endif
+#ifdef CONFIG_LGE_CHARGER_TEMP_SCENARIO
+	POWER_SUPPLY_PROP_BATTERY_TEMP_ADC,
+#endif
+#ifdef CONFIG_LGE_PM
+	POWER_SUPPLY_PROP_PSEUDO_BATT,
+	POWER_SUPPLY_PROP_BLOCK_CHARGING,
+	POWER_SUPPLY_PROP_EXT_PWR_CHECK,
+	POWER_SUPPLY_PROP_FACTORY_MODE,
+#if defined (CONFIG_MACH_LGE_I_BOARD)
+	POWER_SUPPLY_PROP_CHARGING_CURRENT_SET,//                                         
+#endif
+	POWER_SUPPLY_PROP_SMPL_MODE,
+#if 0   
+	POWER_SUPPLY_PROP_WLC_STATUS,
+#endif
+#ifdef CONFIG_BATTERY_325_DCM
+	POWER_SUPPLY_PROP_BATTERY_CONDITION,
+	POWER_SUPPLY_PROP_BATTERY_AGE,
+#endif
+#endif
+#ifdef CONFIG_TEMP_VZW_CONFIG
+	POWER_SUPPLY_PROP_CABLE_INFO,
+#endif
+#ifdef	CONFIG_MACH_LGE_325_BOARD_VZW
+	POWER_SUPPLY_PROP_ACC_ADC,
+	POWER_SUPPLY_PROP_CABLE_NAME,
+	POWER_SUPPLY_PROP_CHARGING_STATUS,
+	POWER_SUPPLY_PROP_BATTERY_CHARGER_DONE,
+#endif
+#endif
 };
 
 enum power_supply_type {
@@ -140,7 +174,6 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_DCP,	/* Dedicated Charging Port */
 	POWER_SUPPLY_TYPE_USB_CDP,	/* Charging Downstream Port */
 	POWER_SUPPLY_TYPE_USB_ACA,	/* Accessory Charger Adapters */
-	POWER_SUPPLY_TYPE_BMS,		/* Battery Monitor System */
 };
 
 union power_supply_propval {
@@ -211,7 +244,6 @@ struct power_supply_info {
 	int use_for_apm;
 };
 
-#if defined(CONFIG_POWER_SUPPLY) || defined(CONFIG_POWER_SUPPLY_MODULE)
 extern struct power_supply *power_supply_get_by_name(char *name);
 extern void power_supply_changed(struct power_supply *psy);
 extern int power_supply_am_i_supplied(struct power_supply *psy);
@@ -220,31 +252,10 @@ extern int power_supply_set_current_limit(struct power_supply *psy, int limit);
 extern int power_supply_set_online(struct power_supply *psy, bool enable);
 extern int power_supply_set_scope(struct power_supply *psy, int scope);
 extern int power_supply_set_charge_type(struct power_supply *psy, int type);
-extern int power_supply_set_supply_type(struct power_supply *psy,
-					enum power_supply_type supply_type);
+
+#if defined(CONFIG_POWER_SUPPLY) || defined(CONFIG_POWER_SUPPLY_MODULE)
 extern int power_supply_is_system_supplied(void);
 #else
-static inline struct power_supply *power_supply_get_by_name(char *name)
-							{ return -ENOSYS; }
-static inline int power_supply_am_i_supplied(struct power_supply *psy)
-							{ return -ENOSYS; }
-static inline int power_supply_set_battery_charged(struct power_supply *psy)
-							{ return -ENOSYS; }
-static inline int power_supply_set_current_limit(struct power_supply *psy,
-							int limit)
-							{ return -ENOSYS; }
-static inline int power_supply_set_online(struct power_supply *psy,
-							bool enable)
-							{ return -ENOSYS; }
-static inline int power_supply_set_scope(struct power_supply *psy,
-							int scope)
-							{ return -ENOSYS; }
-static inline int power_supply_set_charge_type(struct power_supply *psy,
-							int type)
-							{ return -ENOSYS; }
-static inline int power_supply_set_supply_type(struct power_supply *psy,
-					enum power_supply_type supply_type);
-							{ return -ENOSYS; }
 static inline int power_supply_is_system_supplied(void) { return -ENOSYS; }
 #endif
 

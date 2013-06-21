@@ -40,9 +40,40 @@ static struct msm_actuator msm_piezo_actuator_table = {
 	},
 };
 
+//                                                        
+#if defined(CONFIG_LGE_SENSOR_MT9E013) && defined(CONFIG_MSM_CAMERA_V4L2)
+extern struct msm_actuator msm_actuator_table_mt9e013;
+#endif
+//                                                        
+
+//                                   
+#if defined(CONFIG_LGE_SENSOR_MT9P017) && defined(CONFIG_MSM_CAMERA_V4L2)
+extern struct msm_actuator msm_actuator_table_mt9p017;
+#endif
+
+//                                                                                           
+#if defined(CONFIG_LGE_SENSOR_IMX105) && defined(CONFIG_MSM_CAMERA_V4L2)
+extern struct msm_actuator msm_actuator_table_imx105;
+#endif
+//                                                                                         
+
 static struct msm_actuator *actuators[] = {
 	&msm_vcm_actuator_table,
 	&msm_piezo_actuator_table,
+//                                                        
+#if defined(CONFIG_LGE_SENSOR_MT9E013) && defined(CONFIG_MSM_CAMERA_V4L2)
+	&msm_actuator_table_mt9e013,
+#endif	
+//                                                        
+//                                   
+#if defined(CONFIG_LGE_SENSOR_MT9P017) && defined(CONFIG_MSM_CAMERA_V4L2)
+	&msm_actuator_table_mt9p017,
+#endif	
+//                                                                                           
+#if defined(CONFIG_LGE_SENSOR_IMX105) && defined(CONFIG_MSM_CAMERA_V4L2)
+	&msm_actuator_table_imx105,
+#endif	
+//                                                                                         
 };
 
 int32_t msm_actuator_piezo_set_default_focus(
@@ -168,6 +199,28 @@ int32_t msm_actuator_write_focus(
 	damping_code_step = damping_params->damping_step;
 	wait_time = damping_params->damping_delay;
 
+       //                                                                                          
+	//                                                                                             
+	//printk("damping_code_step = %d\n",damping_code_step);
+	//printk("wait_time = %d\n",wait_time);
+	//printk("curr_lens_pos = %d\n",curr_lens_pos);
+	//printk("sign_direction = %d\n",sign_direction);
+	//printk("code_boundary = %d\n",code_boundary);
+	//printk("damping_params->hw_params = %d\n",damping_params->hw_params);
+	//                                                                                        
+
+	if (damping_code_step ==0)
+	{
+		printk("[ERROR][%s] damping_code_step = %d ---> 255\n",__func__,damping_code_step);
+		damping_code_step = 255;
+	}
+	if (wait_time ==0)
+	{
+		printk("[ERROR][%s] wait_time = %d ---> 4500\n",__func__,damping_code_step);
+		wait_time = 4500;
+	}
+	//                                                                                           
+
 	/* Write code based on damping_code_step in a loop */
 	for (next_lens_pos =
 		curr_lens_pos + (sign_direction * damping_code_step);
@@ -230,12 +283,11 @@ int32_t msm_actuator_move_focus(
 	int16_t dest_step_pos = move_params->dest_step_pos;
 	uint16_t curr_lens_pos = 0;
 	int dir = move_params->dir;
-	int32_t num_steps = move_params->num_steps;
+//	int32_t num_steps = move_params->num_steps;  // for compile after not to use CDBG
 
-	CDBG("%s called, dir %d, num_steps %d\n",
-		__func__,
-		dir,
-		num_steps);
+	int count_actuator_write = 0;
+//	CDBG("%s called, dir %d, num_steps %d\n",__func__,dir,num_steps);
+	CDBG("%s called, dir %d, num_steps %d\n",__func__,dir,move_params->num_steps);  // for compile after not to use CDBG
 
 	if (dest_step_pos == a_ctrl->curr_step_pos)
 		return rc;
@@ -271,6 +323,9 @@ int32_t msm_actuator_move_focus(
 				return rc;
 			}
 			curr_lens_pos = target_lens_pos;
+			//                                                                                             
+			count_actuator_write ++;
+			//printk("%s count_actuator_write = %d\n",__func__,count_actuator_write);
 
 		} else {
 			target_step_pos = step_boundary;
@@ -295,8 +350,29 @@ int32_t msm_actuator_move_focus(
 			curr_lens_pos = target_lens_pos;
 
 			a_ctrl->curr_region_index += sign_dir;
+			//                                                                                             
+			if (a_ctrl->curr_region_index >= 2)
+			{
+			 printk("[ERROR][%s] a_ctrl->curr_region_index = %d ---> 1\n",__func__,a_ctrl->curr_region_index);
+			 a_ctrl->curr_region_index = 1;
+			}
+			if (a_ctrl->curr_region_index < 0)
+			{
+			 printk("[ERROR][%s] a_ctrl->curr_region_index = %d ---> 0\n",__func__,a_ctrl->curr_region_index);
+			 a_ctrl->curr_region_index = 0;
+			}
+			count_actuator_write ++;
+			//printk("%s count_actuator_write = %d\n",__func__,count_actuator_write);
+			//                                                                                           
 		}
 		a_ctrl->curr_step_pos = target_step_pos;
+		//                                                                                             
+		if (count_actuator_write > 2)
+		{
+		   printk("[ERROR][%s] count_actuator_write = %d ---> break\n",__func__,count_actuator_write);
+		   break;
+	    }
+		//                                                                                           
 	}
 
 	return rc;

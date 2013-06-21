@@ -56,6 +56,13 @@ struct msm_cam_expander_info {
 };
 
 struct msm_camera_device_platform_data {
+	/*                                        */
+	//                                                                                
+#ifdef CONFIG_LGE_CAMERA 
+	void (*camera_power_on) (void);
+	void (*camera_power_off)(void);
+#endif
+	//                                                                              
 	int (*camera_gpio_on) (void);
 	void (*camera_gpio_off)(void);
 	struct msm_camera_io_ext ioext;
@@ -532,7 +539,6 @@ struct msm_i2c_platform_data {
 	int aux_dat;
 	int src_clk_rate;
 	int use_gsbi_shared_mode;
-	int keep_ahb_clk_on;
 	void (*msm_i2c_config_gpio)(int iface, int config_type);
 };
 

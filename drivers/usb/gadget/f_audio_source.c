@@ -1,5 +1,4 @@
-/*
- * Gadget Function Driver for USB audio source device
+/* Gadget Function Driver for USB audio source device
  *
  * Copyright (C) 2012 Google, Inc.
  *
@@ -24,8 +23,7 @@
 #define SAMPLE_RATE 44100
 #define FRAMES_PER_MSEC (SAMPLE_RATE / 1000)
 
-#define IN_EP_MAX_PACKET_SIZE	256
-
+#define IN_EP_MAX_PACKET_SIZE 256
 /* Number of requests to allocate */
 #define IN_EP_REQ_COUNT 4
 
@@ -333,7 +331,6 @@ static void audio_send(struct audio_dev *audio)
 
 	runtime = audio->substream->runtime;
 
-	/* compute number of frames to send */
 	now = ktime_get();
 	msecs = ktime_to_ns(now) - ktime_to_ns(audio->start_time);
 	do_div(msecs, 1000000);
@@ -545,7 +542,6 @@ static void audio_disable(struct usb_function *f)
 {
 	struct audio_dev *audio = func_to_audio_source(f);
 
-	pr_debug("audio_disable\n");
 	usb_ep_disable(audio->in_ep);
 }
 
@@ -624,6 +620,10 @@ audio_unbind(struct usb_configuration *c, struct usb_function *f)
 	struct audio_dev *audio = func_to_audio_source(f);
 	struct usb_request *req;
 
+    if(audio->substream)
+        snd_pcm_period_elapsed(audio->substream);
+    else
+        pr_err("[%s] audio->substream is NULL\n", __func__);
 	while ((req = audio_req_get(audio)))
 		audio_request_free(req, audio->in_ep);
 
@@ -640,6 +640,21 @@ static void audio_pcm_playback_start(struct audio_dev *audio)
 	audio->frames_sent = 0;
 	audio_send(audio);
 }
+
+static struct audio_dev _audio_dev = {
+	.func = {
+		.name = "audio_source",
+		.bind = audio_bind,
+		.unbind = audio_unbind,
+		.set_alt = audio_set_alt,
+		.setup = audio_setup,
+		.disable = audio_disable,
+		.descriptors = fs_audio_desc,
+		.hs_descriptors = hs_audio_desc,
+	},
+	.lock = __SPIN_LOCK_UNLOCKED(_audio_dev.lock),
+	.idle_reqs = LIST_HEAD_INIT(_audio_dev.idle_reqs),
+};
 
 static void audio_pcm_playback_stop(struct audio_dev *audio)
 {
@@ -746,21 +761,6 @@ static int audio_pcm_playback_trigger(struct snd_pcm_substream *substream,
 
 	return ret;
 }
-
-static struct audio_dev _audio_dev = {
-	.func = {
-		.name = "audio_source",
-		.bind = audio_bind,
-		.unbind = audio_unbind,
-		.set_alt = audio_set_alt,
-		.setup = audio_setup,
-		.disable = audio_disable,
-		.descriptors = fs_audio_desc,
-		.hs_descriptors = hs_audio_desc,
-	},
-	.lock = __SPIN_LOCK_UNLOCKED(_audio_dev.lock),
-	.idle_reqs = LIST_HEAD_INIT(_audio_dev.idle_reqs),
-};
 
 static struct snd_pcm_ops audio_playback_ops = {
 	.open		= audio_pcm_open,

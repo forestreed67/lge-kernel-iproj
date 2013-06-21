@@ -2445,9 +2445,6 @@ static int voice_destroy_vocproc(struct voice_data *v)
 	/* send stop voice cmd */
 	voice_send_stop_voice_cmd(v);
 
-	/* Clear mute setting */
-	v->dev_tx.mute = common.default_mute_val;
-
 	/* detach VOCPROC and wait for response from mvm */
 	mvm_d_vocproc_cmd.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
 						APR_HDR_LEN(APR_HDR_SIZE),
@@ -3199,6 +3196,7 @@ int voc_set_tx_mute(uint16_t session_id, uint32_t dir, uint32_t mute)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
 
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
@@ -3210,9 +3208,7 @@ int voc_set_tx_mute(uint16_t session_id, uint32_t dir, uint32_t mute)
 
 	v->dev_tx.mute = mute;
 
-	if ((v->voc_state == VOC_RUN) ||
-	    (v->voc_state == VOC_CHANGE) ||
-	    (v->voc_state == VOC_STANDBY))
+	if (v->voc_state == VOC_RUN)
 		ret = voice_send_mute_cmd(v);
 
 	mutex_unlock(&v->lock);
@@ -3224,6 +3220,7 @@ int voc_set_rx_device_mute(uint16_t session_id, uint32_t mute)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
 
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
@@ -3308,6 +3305,7 @@ int voc_set_widevoice_enable(uint16_t session_id, uint32_t wv_enable)
 	struct voice_data *v = voice_get_session(session_id);
 	u16 mvm_handle;
 	int ret = 0;
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
 
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
@@ -3407,6 +3405,7 @@ int voc_set_rx_vol_index(uint16_t session_id, uint32_t dir, uint32_t vol_idx)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
 
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
@@ -3418,9 +3417,7 @@ int voc_set_rx_vol_index(uint16_t session_id, uint32_t dir, uint32_t vol_idx)
 
 	v->dev_rx.volume = vol_idx;
 
-	if ((v->voc_state == VOC_RUN) ||
-	    (v->voc_state == VOC_CHANGE) ||
-	    (v->voc_state == VOC_STANDBY))
+	if (v->voc_state == VOC_RUN)
 		ret = voice_send_vol_index_cmd(v);
 
 	mutex_unlock(&v->lock);
@@ -3503,6 +3500,7 @@ int voc_end_voice_call(uint16_t session_id)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
 
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
@@ -3536,7 +3534,9 @@ int voc_resume_voice_call(uint16_t session_id)
 	void *apr_mvm;
 	u16 mvm_handle;
 
-	pr_debug("%s:\n", __func__);
+//	pr_debug("%s:\n", __func__);
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
+
 	if (v == NULL) {
 		pr_err("%s: v is NULL\n", __func__);
 		return -EINVAL;
@@ -3579,6 +3579,8 @@ int voc_start_voice_call(uint16_t session_id)
 	struct sidetone_cal sidetone_cal_data;
 	int ret = 0;
 
+	pr_info("[%s:%s]\n", __MM_FILE__, __func__);	//                      
+
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
 
@@ -3609,15 +3611,6 @@ int voc_start_voice_call(uint16_t session_id)
 			pr_err("setup voice failed\n");
 			goto fail;
 		}
-
-		ret = voice_send_vol_index_cmd(v);
-		if (ret < 0)
-			pr_err("voice volume failed\n");
-
-		ret = voice_send_mute_cmd(v);
-		if (ret < 0)
-			pr_err("voice mute failed\n");
-
 		ret = voice_send_start_voice_cmd(v);
 		if (ret < 0) {
 			pr_err("start voice failed\n");
@@ -3652,7 +3645,9 @@ int voc_standby_voice_call(uint16_t session_id)
 	u16 mvm_handle;
 	int ret = 0;
 
-	pr_debug("%s: voc state=%d", __func__, v->voc_state);
+//	pr_debug("%s: voc state=%d", __func__, v->voc_state);
+	pr_info("[%s:%s]voc state=%d\n", __MM_FILE__, __func__,v->voc_state);	//                      
+
 	if (v == NULL) {
 		pr_err("%s: v is NULL\n", __func__);
 		return -EINVAL;
@@ -3709,6 +3704,8 @@ void voc_config_vocoder(uint32_t media_type,
 	common.mvs_info.rate = rate;
 	common.mvs_info.network_type = network_type;
 	common.mvs_info.dtx_mode = dtx_mode;
+	pr_info("[%s:%s]media_type=(%d):rate=(%d):network_type=(%d):dtx_mode(%d)\n",
+        __MM_FILE__, __func__,common.mvs_info.media_type,common.mvs_info.rate,common.mvs_info.network_type,common.mvs_info.dtx_mode); //                      
 }
 
 static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv)
@@ -4122,7 +4119,7 @@ static int __init voice_init(void)
 	voice_allocate_shared_memory();
 
 	/* set default value */
-	common.default_mute_val = 0;  /* default is un-mute */
+	common.default_mute_val = 1;  /* default is mute */
 	common.default_vol_val = 0;
 	common.default_sample_val = 8000;
 

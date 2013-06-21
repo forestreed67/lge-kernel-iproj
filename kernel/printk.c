@@ -633,6 +633,13 @@ static size_t log_prefix(const char *p, unsigned int *level, char *special)
 	if (p[2] == '>') {
 		/* usual single digit level number or special char */
 		switch (p[1]) {
+#ifdef CONFIG_MACH_LGE_325_BOARD_VZW
+#ifdef CONFIG_LGE_LOG_SERVICE
+        case 'B':   /* boot */
+        case 'W':   /* wakeup */
+        case 'S':   /* start logging */
+#endif
+#endif
 		case '0' ... '7':
 			lev = p[1] - '0';
 			break;
@@ -939,6 +946,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 
 
 	p = printk_buf;
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	store_crash_log(p);
+#endif
 
 	/* Read log level and handle special printk prefix */
 	plen = log_prefix(p, &current_log_level, &special);
@@ -984,8 +994,38 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 
 			if (printk_time) {
 				/* Add the current time stamp */
+//mo2sungdae.lee WBT 455541 Fix array out of bounds
+#if defined(CONFIG_MACH_LGE_325_BOARD)||defined(CONFIG_MACH_LGE_IJB_BOARD_SKT)||defined(CONFIG_MACH_LGE_IJB_BOARD_LGU)
+				char tbuf[128], *tp;
+#else
 				char tbuf[50], *tp;
+#endif
 				unsigned tlen;
+//                                                                                                    
+//                                                                                                                                                                             
+// http://165.243.137.64:8100/Cayman_LGU/#change,5547
+#if 1
+				unsigned long long t;
+				unsigned long nanosec_rem;
+
+				struct timespec time;
+				struct tm tmresult;
+
+				t = cpu_clock(printk_cpu);
+				nanosec_rem = do_div(t, 1000000000);
+
+				time = __current_kernel_time();
+				time_to_tm(time.tv_sec,sys_tz.tz_minuteswest * 60* (-1),&tmresult);
+				tlen = sprintf(tbuf, "[%5lu.%06lu / %02d-%02d %02d:%02d:%02d.%03lu] ",
+						(unsigned long) t,
+						nanosec_rem / 1000,
+						tmresult.tm_mon+1,
+						tmresult.tm_mday,
+						tmresult.tm_hour,
+						tmresult.tm_min,
+						tmresult.tm_sec,
+						(unsigned long) time.tv_nsec/1000000);
+#else
 				unsigned long long t;
 				unsigned long nanosec_rem;
 
@@ -994,6 +1034,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 				tlen = sprintf(tbuf, "[%5lu.%06lu] ",
 						(unsigned long) t,
 						nanosec_rem / 1000);
+#endif
+//                                                                                                                                                                             
+//                                                                                                    
 
 				for (tp = tbuf; tp < tbuf + tlen; tp++)
 					emit_log_char(*tp);

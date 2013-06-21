@@ -1792,11 +1792,11 @@ static void tabla_codec_enable_bandgap(struct snd_soc_codec *codec,
 			0x00);
 	} else if ((tabla->bandgap_type == TABLA_BANDGAP_MBHC_MODE) &&
 		(choice == TABLA_BANDGAP_AUDIO_MODE)) {
-		snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x50);
+		snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x00);
 		usleep_range(100, 100);
 		tabla_codec_enable_audio_mode_bandgap(codec);
 	} else if (choice == TABLA_BANDGAP_OFF) {
-		snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x50);
+		snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x00);
 	} else {
 		pr_err("%s: Error, Invalid bandgap settings\n", __func__);
 	}
@@ -3063,26 +3063,6 @@ static int tabla_lineout_dac_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-static int tabla_ear_pa_event(struct snd_soc_dapm_widget *w,
-	struct snd_kcontrol *kcontrol, int event)
-{
-	struct snd_soc_codec *codec = w->codec;
-
-	pr_debug("%s %d\n", __func__, event);
-
-	switch (event) {
-	case SND_SOC_DAPM_PRE_PMU:
-		snd_soc_update_bits(codec, TABLA_A_RX_EAR_EN, 0x50, 0x50);
-		break;
-
-	case SND_SOC_DAPM_PRE_PMD:
-		snd_soc_update_bits(codec, TABLA_A_RX_EAR_EN, 0x10, 0x00);
-		snd_soc_update_bits(codec, TABLA_A_RX_EAR_EN, 0x40, 0x00);
-		break;
-	}
-	return 0;
-}
-
 static const struct snd_soc_dapm_widget tabla_1_x_dapm_widgets[] = {
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS4 External", TABLA_1_A_MICB_4_CTL, 7,
 				0, tabla_codec_enable_micbias,
@@ -3712,9 +3692,19 @@ static s16 tabla_get_current_v_hs_max(struct tabla_priv *tabla)
 	return v_hs_max;
 }
 
-static void tabla_codec_calibrate_rel(struct snd_soc_codec *codec)
+static void tabla_codec_calibrate_hs_polling(struct snd_soc_codec *codec)
 {
+	u8 *n_ready, *n_cic;
+	struct tabla_mbhc_btn_detect_cfg *btn_det;
 	struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
+	const s16 v_ins_hu = tabla_get_current_v_ins(tabla, true);
+
+	btn_det = TABLA_MBHC_CAL_BTN_DET_PTR(tabla->mbhc_cfg.calibration);
+
+	snd_soc_write(codec, TABLA_A_CDC_MBHC_VOLT_B1_CTL,
+		      v_ins_hu & 0xFF);
+	snd_soc_write(codec, TABLA_A_CDC_MBHC_VOLT_B2_CTL,
+		      (v_ins_hu >> 8) & 0xFF);
 
 	snd_soc_write(codec, TABLA_A_CDC_MBHC_VOLT_B3_CTL,
 		      tabla->mbhc_data.v_b1_hu & 0xFF);
@@ -3735,23 +3725,6 @@ static void tabla_codec_calibrate_rel(struct snd_soc_codec *codec)
 		      tabla->mbhc_data.v_brl & 0xFF);
 	snd_soc_write(codec, TABLA_A_CDC_MBHC_VOLT_B12_CTL,
 		      (tabla->mbhc_data.v_brl >> 8) & 0xFF);
-}
-
-static void tabla_codec_calibrate_hs_polling(struct snd_soc_codec *codec)
-{
-	u8 *n_ready, *n_cic;
-	struct tabla_mbhc_btn_detect_cfg *btn_det;
-	struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
-	const s16 v_ins_hu = tabla_get_current_v_ins(tabla, true);
-
-	btn_det = TABLA_MBHC_CAL_BTN_DET_PTR(tabla->mbhc_cfg.calibration);
-
-	snd_soc_write(codec, TABLA_A_CDC_MBHC_VOLT_B1_CTL,
-		      v_ins_hu & 0xFF);
-	snd_soc_write(codec, TABLA_A_CDC_MBHC_VOLT_B2_CTL,
-		      (v_ins_hu >> 8) & 0xFF);
-
-	tabla_codec_calibrate_rel(codec);
 
 	n_ready = tabla_mbhc_cal_btn_det_mp(btn_det, TABLA_BTN_DET_N_READY);
 	snd_soc_write(codec, TABLA_A_CDC_MBHC_TIMER_B1_CTL,
@@ -4719,11 +4692,9 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 	/*RX stuff */
 	SND_SOC_DAPM_OUTPUT("EAR"),
 
-	SND_SOC_DAPM_PGA_E("EAR PA", SND_SOC_NOPM, 0, 0, NULL,
-			0, tabla_ear_pa_event, SND_SOC_DAPM_PRE_PMU |
-			SND_SOC_DAPM_PRE_PMD),
+	SND_SOC_DAPM_PGA("EAR PA", TABLA_A_RX_EAR_EN, 4, 0, NULL, 0),
 
-	SND_SOC_DAPM_MIXER("DAC1", SND_SOC_NOPM, 0, 0, dac1_switch,
+	SND_SOC_DAPM_MIXER("DAC1", TABLA_A_RX_EAR_EN, 6, 0, dac1_switch,
 		ARRAY_SIZE(dac1_switch)),
 
 	/* Headphone */
@@ -5765,55 +5736,15 @@ static s16 tabla_scale_v_micb_vddio(struct tabla_priv *tabla, int v,
 	return r;
 }
 
-static void tabla_mbhc_calc_rel_thres(struct snd_soc_codec *codec, s16 mv)
-{
-	s16 deltamv;
-	struct tabla_priv *tabla;
-	struct tabla_mbhc_btn_detect_cfg *btn_det;
-
-	tabla = snd_soc_codec_get_drvdata(codec);
-	btn_det = TABLA_MBHC_CAL_BTN_DET_PTR(tabla->mbhc_cfg.calibration);
-
-	tabla->mbhc_data.v_b1_h =
-	    tabla_codec_v_sta_dce(codec, DCE,
-				  mv + btn_det->v_btn_press_delta_cic);
-
-	tabla->mbhc_data.v_brh = tabla->mbhc_data.v_b1_h;
-
-	tabla->mbhc_data.v_brl = TABLA_MBHC_BUTTON_MIN;
-
-	deltamv = mv + btn_det->v_btn_press_delta_sta;
-	tabla->mbhc_data.v_b1_hu = tabla_codec_v_sta_dce(codec, STA, deltamv);
-
-	deltamv = mv + btn_det->v_btn_press_delta_cic;
-	tabla->mbhc_data.v_b1_huc = tabla_codec_v_sta_dce(codec, DCE, deltamv);
-}
-
-static void tabla_mbhc_set_rel_thres(struct snd_soc_codec *codec, s16 mv)
-{
-	tabla_mbhc_calc_rel_thres(codec, mv);
-	tabla_codec_calibrate_rel(codec);
-}
-
-static s16 tabla_mbhc_highest_btn_mv(struct snd_soc_codec *codec)
-{
-	struct tabla_priv *tabla;
-	struct tabla_mbhc_btn_detect_cfg *btn_det;
-	u16 *btn_high;
-
-	tabla = snd_soc_codec_get_drvdata(codec);
-	btn_det = TABLA_MBHC_CAL_BTN_DET_PTR(tabla->mbhc_cfg.calibration);
-	btn_high = tabla_mbhc_cal_btn_det_mp(btn_det, TABLA_BTN_DET_V_BTN_HIGH);
-
-	return btn_high[btn_det->num_btn - 1];
-}
-
 static void tabla_mbhc_calc_thres(struct snd_soc_codec *codec)
 {
 	struct tabla_priv *tabla;
+	s16 btn_mv = 0, btn_delta_mv;
 	struct tabla_mbhc_btn_detect_cfg *btn_det;
 	struct tabla_mbhc_plug_type_cfg *plug_type;
+	u16 *btn_high;
 	u8 *n_ready;
+	int i;
 
 	tabla = snd_soc_codec_get_drvdata(codec);
 	btn_det = TABLA_MBHC_CAL_BTN_DET_PTR(tabla->mbhc_cfg.calibration);
@@ -5864,7 +5795,22 @@ static void tabla_mbhc_calc_thres(struct snd_soc_codec *codec)
 					     false);
 	}
 
-	tabla_mbhc_calc_rel_thres(codec, tabla_mbhc_highest_btn_mv(codec));
+	btn_high = tabla_mbhc_cal_btn_det_mp(btn_det, TABLA_BTN_DET_V_BTN_HIGH);
+	for (i = 0; i < btn_det->num_btn; i++)
+		btn_mv = btn_high[i] > btn_mv ? btn_high[i] : btn_mv;
+
+	tabla->mbhc_data.v_b1_h = tabla_codec_v_sta_dce(codec, DCE, btn_mv);
+	btn_delta_mv = btn_mv + btn_det->v_btn_press_delta_sta;
+	tabla->mbhc_data.v_b1_hu =
+	    tabla_codec_v_sta_dce(codec, STA, btn_delta_mv);
+
+	btn_delta_mv = btn_mv + btn_det->v_btn_press_delta_cic;
+
+	tabla->mbhc_data.v_b1_huc =
+	    tabla_codec_v_sta_dce(codec, DCE, btn_delta_mv);
+
+	tabla->mbhc_data.v_brh = tabla->mbhc_data.v_b1_h;
+	tabla->mbhc_data.v_brl = TABLA_MBHC_BUTTON_MIN;
 
 	tabla->mbhc_data.v_no_mic =
 	    tabla_codec_v_sta_dce(codec, STA, plug_type->v_no_mic);
@@ -6023,9 +5969,8 @@ static irqreturn_t tabla_dce_handler(int irq, void *data)
 {
 	int i, mask;
 	short dce, sta;
-	s32 mv, mv_s, stamv, stamv_s;
+	s32 mv, mv_s, stamv_s;
 	bool vddio;
-	u16 *btn_high;
 	int btn = -1, meas = 0;
 	struct tabla_priv *priv = data;
 	const struct tabla_mbhc_btn_detect_cfg *d =
@@ -6038,7 +5983,6 @@ static irqreturn_t tabla_dce_handler(int irq, void *data)
 
 	pr_debug("%s: enter\n", __func__);
 
-	btn_high = tabla_mbhc_cal_btn_det_mp(d, TABLA_BTN_DET_V_BTN_HIGH);
 	TABLA_ACQUIRE_LOCK(priv->codec_resource_lock);
 	if (priv->mbhc_state == MBHC_STATE_POTENTIAL_RECOVERY) {
 		pr_debug("%s: mbhc is being recovered, skip button press\n",
@@ -6075,34 +6019,35 @@ static irqreturn_t tabla_dce_handler(int irq, void *data)
 			pr_debug("%s: Button is already released shortly after "
 				 "resume\n", __func__);
 			n_btn_meas = 0;
+		} else {
+			pr_debug("%s: Button is already released without "
+				 "resume", __func__);
+			sta = tabla_codec_read_sta_result(codec);
+			stamv_s = tabla_codec_sta_dce_v(codec, 0, sta);
+			if (vddio)
+				stamv_s = tabla_scale_v_micb_vddio(priv,
+								   stamv_s,
+								   false);
+			btn = tabla_determine_button(priv, mv_s);
+			if (btn != tabla_determine_button(priv, stamv_s))
+				btn = -1;
+			goto done;
 		}
 	}
 
-	/* save hw dce */
-	btnmeas[meas++] = tabla_determine_button(priv, mv_s);
-	pr_debug("%s: meas HW - DCE %x,%d,%d button %d\n", __func__,
-		 dce, mv, mv_s, btnmeas[0]);
-	if (n_btn_meas == 0) {
-		sta = tabla_codec_read_sta_result(codec);
-		stamv_s = stamv = tabla_codec_sta_dce_v(codec, 0, sta);
-		if (vddio)
-			stamv_s = tabla_scale_v_micb_vddio(priv, stamv, false);
-		btn = tabla_determine_button(priv, stamv_s);
-		pr_debug("%s: meas HW - STA %x,%d,%d button %d\n", __func__,
-			 sta, stamv, stamv_s, btn);
-		BUG_ON(meas != 1);
-		if (btnmeas[0] != btn)
-			btn = -1;
-	}
-
 	/* determine pressed button */
+	btnmeas[meas++] = tabla_determine_button(priv, mv_s);
+	pr_debug("%s: meas %d - DCE %d,%d,%d button %d\n", __func__,
+		 meas - 1, dce, mv, mv_s, btnmeas[meas - 1]);
+	if (n_btn_meas == 0)
+		btn = btnmeas[0];
 	for (; ((d->n_btn_meas) && (meas < (d->n_btn_meas + 1))); meas++) {
 		dce = tabla_codec_sta_dce(codec, 1, false);
 		mv = tabla_codec_sta_dce_v(codec, 1, dce);
 		mv_s = vddio ? tabla_scale_v_micb_vddio(priv, mv, false) : mv;
 
 		btnmeas[meas] = tabla_determine_button(priv, mv_s);
-		pr_debug("%s: meas %d - DCE %x,%d,%d button %d\n",
+		pr_debug("%s: meas %d - DCE %d,%d,%d button %d\n",
 			 __func__, meas, dce, mv, mv_s, btnmeas[meas]);
 		/* if large enough measurements are collected,
 		 * start to check if last all n_btn_con measurements were
@@ -6130,8 +6075,6 @@ static irqreturn_t tabla_dce_handler(int irq, void *data)
 				 "press\n", __func__);
 			goto done;
 		}
-		/* narrow down release threshold */
-		tabla_mbhc_set_rel_thres(codec, btn_high[btn]);
 		mask = tabla_get_button_mask(btn);
 		priv->buttons_pressed |= mask;
 		wcd9xxx_lock_sleep(core);
@@ -6237,8 +6180,6 @@ static irqreturn_t tabla_release_handler(int irq, void *data)
 		priv->buttons_pressed &= ~TABLA_JACK_BUTTON_MASK;
 	}
 
-	/* revert narrowed release threshold */
-	tabla_mbhc_calc_rel_thres(codec, tabla_mbhc_highest_btn_mv(codec));
 	tabla_codec_calibrate_hs_polling(codec);
 
 	if (priv->mbhc_cfg.gpio)
@@ -6481,7 +6422,7 @@ tabla_codec_get_plug_type(struct snd_soc_codec *codec, bool highhph)
 	s16 mb_v[num_det];
 	s32 mic_mv[num_det];
 	bool inval;
-	bool highdelta = false;
+	bool highdelta;
 	bool ahighv = false, highv;
 	bool gndmicswapped = false;
 
@@ -6540,29 +6481,26 @@ tabla_codec_get_plug_type(struct snd_soc_codec *codec, bool highhph)
 			if (vddioswitch)
 				__tabla_codec_switch_micbias(tabla->codec, 0,
 							     false, false);
+			/* claim UNSUPPORTED plug insertion when
+			 * good headset is detected but HPHR GND switch makes
+			 * delta difference */
+			if (i == (num_det - 2) && highdelta && !ahighv)
+				gndmicswapped = true;
+			else if (i == (num_det - 1) && inval) {
+				if (gndmicswapped)
+					plug_type[0] = PLUG_TYPE_GND_MIC_SWAP;
+				else
+					plug_type[0] = PLUG_TYPE_INVALID;
+			}
 		}
 		pr_debug("%s: DCE #%d, %04x, V %d, scaled V %d, GND %d, "
 			 "VDDIO %d, inval %d\n", __func__,
 			 i + 1, mb_v[i] & 0xffff, mic_mv[i], scaled, gndswitch,
 			 vddioswitch, inval);
 		/* don't need to run further DCEs */
-		if ((ahighv || !vddioswitch) && inval)
+		if (ahighv && inval)
 			break;
 		mic_mv[i] = scaled;
-
-		/*
-		 * claim UNSUPPORTED plug insertion when
-		 * good headset is detected but HPHR GND switch makes
-		 * delta difference
-		 */
-		if (i == (num_det - 2) && highdelta && !ahighv)
-			gndmicswapped = true;
-		else if (i == (num_det - 1) && inval) {
-			if (gndmicswapped)
-				plug_type[0] = PLUG_TYPE_GND_MIC_SWAP;
-			else
-				plug_type[0] = PLUG_TYPE_INVALID;
-		}
 	}
 
 	for (i = 0; (plug_type[0] != PLUG_TYPE_GND_MIC_SWAP && !inval) &&

@@ -42,7 +42,6 @@
 #include <linux/power_supply.h>
 
 #include <mach/clk.h>
-#include <mach/mpm.h>
 #include <mach/msm_xo.h>
 #include <mach/msm_bus.h>
 #include <mach/rpm-regulator.h>
@@ -869,9 +868,6 @@ static int msm_otg_suspend(struct msm_otg *motg)
 		enable_irq_wake(motg->irq);
 		if (motg->pdata->pmic_id_irq)
 			enable_irq_wake(motg->pdata->pmic_id_irq);
-		if (pdata->otg_control == OTG_PHY_CONTROL &&
-			pdata->mpm_otgsessvld_int)
-			msm_mpm_set_pin_wake(pdata->mpm_otgsessvld_int, 1);
 	}
 	if (bus)
 		clear_bit(HCD_FLAG_HW_ACCESSIBLE, &(bus_to_hcd(bus))->flags);
@@ -889,7 +885,6 @@ static int msm_otg_resume(struct msm_otg *motg)
 {
 	struct usb_phy *phy = &motg->phy;
 	struct usb_bus *bus = phy->otg->host;
-	struct msm_otg_platform_data *pdata = motg->pdata;
 	int cnt = 0;
 	unsigned temp;
 	u32 phy_ctrl_val = 0;
@@ -968,9 +963,6 @@ skip_phy_resume:
 		disable_irq_wake(motg->irq);
 		if (motg->pdata->pmic_id_irq)
 			disable_irq_wake(motg->pdata->pmic_id_irq);
-		if (pdata->otg_control == OTG_PHY_CONTROL &&
-			pdata->mpm_otgsessvld_int)
-			msm_mpm_set_pin_wake(pdata->mpm_otgsessvld_int, 0);
 	}
 	if (bus)
 		set_bit(HCD_FLAG_HW_ACCESSIBLE, &(bus_to_hcd(bus))->flags);
@@ -1418,26 +1410,6 @@ static int msm_otg_set_peripheral(struct usb_otg *otg,
 	return 0;
 }
 
-static bool msm_otg_read_pmic_id_state(struct msm_otg *motg)
-{
-	unsigned long flags;
-	int id;
-
-	if (!motg->pdata->pmic_id_irq)
-		return -ENODEV;
-
-	local_irq_save(flags);
-	id = irq_read_line(motg->pdata->pmic_id_irq);
-	local_irq_restore(flags);
-
-	/*
-	 * If we can not read ID line state for some reason, treat
-	 * it as float. This would prevent MHL discovery and kicking
-	 * host mode unnecessarily.
-	 */
-	return !!id;
-}
-
 static bool msm_chg_aca_detect(struct msm_otg *motg)
 {
 	struct usb_phy *phy = &motg->phy;
@@ -1810,8 +1782,6 @@ static void msm_chg_block_on(struct msm_otg *motg)
 		udelay(20);
 		break;
 	case SNPS_28NM_INTEGRATED_PHY:
-		/* disable DP and DM pull down resistors */
-		ulpi_write(phy, 0x6, 0xC);
 		/* Clear charger detecting control bits */
 		ulpi_write(phy, 0x1F, 0x86);
 		/* Clear alt interrupt latch and enable bits */
@@ -1885,7 +1855,8 @@ static void msm_chg_detect_work(struct work_struct *w)
 	switch (motg->chg_state) {
 	case USB_CHG_STATE_UNDEFINED:
 		msm_chg_block_on(motg);
-		msm_chg_enable_dcd(motg);
+		if (motg->pdata->enable_dcd)
+			msm_chg_enable_dcd(motg);
 		msm_chg_enable_aca_det(motg);
 		motg->chg_state = USB_CHG_STATE_WAIT_FOR_DCD;
 		motg->dcd_retries = 0;
@@ -1905,10 +1876,12 @@ static void msm_chg_detect_work(struct work_struct *w)
 				break;
 			}
 		}
-		is_dcd = msm_chg_check_dcd(motg);
+		if (motg->pdata->enable_dcd)
+			is_dcd = msm_chg_check_dcd(motg);
 		tmout = ++motg->dcd_retries == MSM_CHG_DCD_MAX_RETRIES;
 		if (is_dcd || tmout) {
-			msm_chg_disable_dcd(motg);
+			if (motg->pdata->enable_dcd)
+				msm_chg_disable_dcd(motg);
 			msm_chg_enable_primary_det(motg);
 			delay = MSM_CHG_PRIMARY_DET_TIME;
 			motg->chg_state = USB_CHG_STATE_DCD_DONE;
@@ -2021,10 +1994,13 @@ static void msm_otg_init_sm(struct msm_otg *motg)
 				clear_bit(B_SESS_VLD, &motg->inputs);
 		} else if (pdata->otg_control == OTG_PMIC_CONTROL) {
 			if (pdata->pmic_id_irq) {
-				if (msm_otg_read_pmic_id_state(motg))
+				unsigned long flags;
+				local_irq_save(flags);
+				if (irq_read_line(pdata->pmic_id_irq))
 					set_bit(ID, &motg->inputs);
 				else
 					clear_bit(ID, &motg->inputs);
+				local_irq_restore(flags);
 			}
 			/*
 			 * VBUS initial state is reported after PMIC
@@ -2056,6 +2032,9 @@ static void msm_otg_init_sm(struct msm_otg *motg)
 	}
 }
 
+#ifdef CONFIG_LGE_TOUCHSCREEN_SYNAPTICS_RMI4_I2C   
+extern void trigger_baseline_state_machine(int plug_in);
+#endif
 static void msm_otg_sm_work(struct work_struct *w)
 {
 	struct msm_otg *motg = container_of(w, struct msm_otg, sm_work);
@@ -2096,6 +2075,9 @@ static void msm_otg_sm_work(struct work_struct *w)
 			case USB_CHG_STATE_DETECTED:
 				switch (motg->chg_type) {
 				case USB_DCP_CHARGER:
+#ifdef CONFIG_LGE_TOUCHSCREEN_SYNAPTICS_RMI4_I2C
+                    trigger_baseline_state_machine(USB_DCP_CHARGER);
+#endif
 					/* Enable VDP_SRC */
 					ulpi_write(otg->phy, 0x2, 0x85);
 					/* fall through */
@@ -2119,6 +2101,9 @@ static void msm_otg_sm_work(struct work_struct *w)
 					msm_otg_start_peripheral(otg, 1);
 					otg->phy->state =
 						OTG_STATE_B_PERIPHERAL;
+#ifdef CONFIG_LGE_TOUCHSCREEN_SYNAPTICS_RMI4_I2C
+                    trigger_baseline_state_machine(USB_CDP_CHARGER);
+#endif
 					break;
 				case USB_ACA_C_CHARGER:
 					msm_otg_notify_charger(motg,
@@ -2128,6 +2113,9 @@ static void msm_otg_sm_work(struct work_struct *w)
 						OTG_STATE_B_PERIPHERAL;
 					break;
 				case USB_SDP_CHARGER:
+#ifdef CONFIG_LGE_TOUCHSCREEN_SYNAPTICS_RMI4_I2C
+                    trigger_baseline_state_machine(USB_SDP_CHARGER);
+#endif
 					msm_otg_start_peripheral(otg, 1);
 					otg->phy->state =
 						OTG_STATE_B_PERIPHERAL;
@@ -2154,20 +2142,11 @@ static void msm_otg_sm_work(struct work_struct *w)
 			cancel_delayed_work_sync(&motg->chg_work);
 			motg->chg_state = USB_CHG_STATE_UNDEFINED;
 			motg->chg_type = USB_INVALID_CHARGER;
+#ifdef CONFIG_LGE_TOUCHSCREEN_SYNAPTICS_RMI4_I2C
+            trigger_baseline_state_machine(0);
+#endif
 			msm_otg_notify_charger(motg, 0);
 			msm_otg_reset(otg->phy);
-			/*
-			 * There is a small window where ID interrupt
-			 * is not monitored during ID detection circuit
-			 * switch from ACA to PMIC.  Check ID state
-			 * before entering into low power mode.
-			 */
-			if (!msm_otg_read_pmic_id_state(motg)) {
-				pr_debug("process missed ID intr\n");
-				clear_bit(ID, &motg->inputs);
-				work = 1;
-				break;
-			}
 			pm_runtime_put_noidle(otg->phy->dev);
 			pm_runtime_suspend(otg->phy->dev);
 		}
@@ -2629,7 +2608,9 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 		pr_debug("OTG IRQ: in LPM\n");
 		disable_irq_nosync(irq);
 		motg->async_int = 1;
-		if (!atomic_read(&motg->pm_suspended))
+		if (atomic_read(&motg->pm_suspended))
+			motg->sm_work_pending = true;
+		else
 			pm_request_resume(otg->phy->dev);
 		return IRQ_HANDLED;
 	}
@@ -2813,8 +2794,10 @@ static void msm_pmic_id_status_w(struct work_struct *w)
 	struct msm_otg *motg = container_of(w, struct msm_otg,
 						pmic_id_status_work.work);
 	int work = 0;
+	unsigned long flags;
 
-	if (msm_otg_read_pmic_id_state(motg)) {
+	local_irq_save(flags);
+	if (irq_read_line(motg->pdata->pmic_id_irq)) {
 		if (!test_and_set_bit(ID, &motg->inputs)) {
 			pr_debug("PMIC: ID set\n");
 			work = 1;
@@ -2833,6 +2816,7 @@ static void msm_pmic_id_status_w(struct work_struct *w)
 		else
 			queue_work(system_nrt_wq, &motg->sm_work);
 	}
+	local_irq_restore(flags);
 
 }
 
@@ -3471,9 +3455,6 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 		goto destroy_wlock;
 	}
 
-	if (pdata->otg_control == OTG_PHY_CONTROL && pdata->mpm_otgsessvld_int)
-		msm_mpm_enable_pin(pdata->mpm_otgsessvld_int, 1);
-
 	phy->init = msm_otg_reset;
 	phy->set_power = msm_otg_set_power;
 	phy->set_suspend = msm_otg_set_suspend;
@@ -3624,10 +3605,6 @@ static int __devexit msm_otg_remove(struct platform_device *pdev)
 	usb_set_transceiver(NULL);
 	free_irq(motg->irq, motg);
 
-	if (motg->pdata->otg_control == OTG_PHY_CONTROL &&
-		motg->pdata->mpm_otgsessvld_int)
-		msm_mpm_enable_pin(motg->pdata->mpm_otgsessvld_int, 0);
-
 	/*
 	 * Put PHY in low power mode.
 	 */
@@ -3728,7 +3705,9 @@ static int msm_otg_pm_resume(struct device *dev)
 	dev_dbg(dev, "OTG PM resume\n");
 
 	atomic_set(&motg->pm_suspended, 0);
-	if (motg->async_int || motg->sm_work_pending) {
+	if (motg->sm_work_pending) {
+		motg->sm_work_pending = false;
+
 		pm_runtime_get_noresume(dev);
 		ret = msm_otg_resume(motg);
 
@@ -3737,10 +3716,7 @@ static int msm_otg_pm_resume(struct device *dev)
 		pm_runtime_set_active(dev);
 		pm_runtime_enable(dev);
 
-		if (motg->sm_work_pending) {
-			motg->sm_work_pending = false;
-			queue_work(system_nrt_wq, &motg->sm_work);
-		}
+		queue_work(system_nrt_wq, &motg->sm_work);
 	}
 
 	return ret;

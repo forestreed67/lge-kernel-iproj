@@ -1647,12 +1647,13 @@ static struct resource cpr_resources[] = {
  * These are various Vdd levels supported by PMIC
  */
 static uint32_t msm_c2_pmic_mv[] __initdata = {
-	1300000, 1287500, 1275000, 1262500, 1250000,
-	1237500, 1225000, 1212500, 1200000, 1187500,
-	1175000, 1162500, 1150000, 1137500, 1125000,
-	1112500, 1100000, 1087500, 1075000, 1062500,
-	1050000, 1037500, 1025000, 1012500, 0, 0, 0,
-	0, 0, 0, 0, 1000,
+	1350000, 1337500, 1325000, 1312500, 1300000,
+	1287500, 1275000, 1262500, 1250000, 1237500,
+	1225000, 1212500, 1200000, 1187500, 1175000,
+	1162500, 1150000, 1137500, 1125000, 1112500,
+	1100000, 1087500, 1075000, 1062500, 0,
+	0,	 0,	  0,	   0,	    0,
+	0, 1050000,
 };
 
 /**
@@ -1692,9 +1693,9 @@ static struct msm_cpr_mode msm_cpr_mode_data[] = {
 			.step_quot = ~0,
 			.tgt_volt_offset = 0,
 			.turbo_Vmax = 1350000,
-			.turbo_Vmin = 950000,
+			.turbo_Vmin = 1150000,
 			.nom_Vmax = 1350000,
-			.nom_Vmin = 950000,
+			.nom_Vmin = 1150000,
 			.calibrated_uV = 1300000,
 	},
 };
@@ -1712,7 +1713,7 @@ msm_cpr_get_quot(uint32_t max_quot, uint32_t max_freq, uint32_t new_freq)
 	uint32_t quot;
 
 	/* This formula is as per chip characterization data */
-	quot = max_quot - ((max_freq / 10 - new_freq / 10) * 5);
+	quot = max_quot - (((max_freq - new_freq) * 7) / 10);
 
 	return quot;
 }
@@ -1732,7 +1733,7 @@ static void msm_cpr_clk_enable(void)
 
 static struct msm_cpr_config msm_cpr_pdata = {
 	.ref_clk_khz = 19200,
-	.delay_us = 25000,
+	.delay_us = 1000,
 	.irq_line = 0,
 	.cpr_mode_data = msm_cpr_mode_data,
 	.tgt_count_div_N = 1,
@@ -1740,7 +1741,7 @@ static struct msm_cpr_config msm_cpr_pdata = {
 	.ceiling = 40,
 	.sw_vlevel = 20,
 	.up_threshold = 1,
-	.dn_threshold = 2,
+	.dn_threshold = 4,
 	.up_margin = 0,
 	.dn_margin = 0,
 	.max_nom_freq = 700800,
@@ -1802,6 +1803,22 @@ static void __init msm_cpr_init(void)
 	 * enough to represent the value of maximum quot
 	 */
 	msm_cpr_pdata.max_quot = cpr_info->turbo_quot * 10 + 600;
+	/**
+	 * Fused Quot value for 1.2GHz on a 1.2GHz part is lower than
+	 * the quot value calculated using the scaling factor formula for
+	 * 1.2GHz when running on a 1.4GHz part. So, prop up the Quot for
+	 * a 1.2GHz part by a chip characterization recommended value.
+	 * Ditto for a 1.0GHz part.
+	 */
+	if (msm8625_cpu_id() == MSM8625A) {
+		msm_cpr_pdata.max_quot += 100;
+		if (msm_cpr_pdata.max_quot > 1400)
+			msm_cpr_pdata.max_quot = 1400;
+	} else if (msm8625_cpu_id() == MSM8625) {
+		msm_cpr_pdata.max_quot += 120;
+		if (msm_cpr_pdata.max_quot > 1350)
+			msm_cpr_pdata.max_quot = 1350;
+	}
 
 	/**
 	 * Bits 4:0 of pvs_fuse provide mapping to the safe boot up voltage.
@@ -1810,10 +1827,29 @@ static void __init msm_cpr_init(void)
 	msm_cpr_mode_data[TURBO_MODE].calibrated_uV =
 				msm_c2_pmic_mv[cpr_info->pvs_fuse & 0x1F];
 
+	if ((cpr_info->floor_fuse & 0x3) == 0x0) {
+		msm_cpr_mode_data[TURBO_MODE].nom_Vmin = 1000000;
+		msm_cpr_mode_data[TURBO_MODE].turbo_Vmin = 1100000;
+	} else if ((cpr_info->floor_fuse & 0x3) == 0x1) {
+		msm_cpr_mode_data[TURBO_MODE].nom_Vmin = 1050000;
+		msm_cpr_mode_data[TURBO_MODE].turbo_Vmin = 1100000;
+	} else if ((cpr_info->floor_fuse & 0x3) == 0x2) {
+		msm_cpr_mode_data[TURBO_MODE].nom_Vmin = 1100000;
+		msm_cpr_mode_data[TURBO_MODE].turbo_Vmin = 1100000;
+	}
+
+	/* Temporary change until devices have their floor_fuse bits blown */
+	msm_cpr_mode_data[TURBO_MODE].nom_Vmin = 1100000;
+	msm_cpr_mode_data[TURBO_MODE].turbo_Vmin = 1100000;
+
 	pr_debug("%s: cpr: ring_osc: 0x%x\n", __func__,
 		msm_cpr_mode_data[TURBO_MODE].ring_osc);
 	pr_debug("%s: cpr: turbo_quot: 0x%x\n", __func__, cpr_info->turbo_quot);
 	pr_debug("%s: cpr: pvs_fuse: 0x%x\n", __func__, cpr_info->pvs_fuse);
+	pr_debug("%s: cpr: floor_fuse: 0x%x\n", __func__, cpr_info->floor_fuse);
+	pr_debug("%s: cpr: nom_Vmin: %d, turbo_Vmin: %d\n", __func__,
+		msm_cpr_mode_data[TURBO_MODE].nom_Vmin,
+		msm_cpr_mode_data[TURBO_MODE].turbo_Vmin);
 	kfree(cpr_info);
 
 	if (msm8625_cpu_id() == MSM8625A)
@@ -2005,7 +2041,6 @@ static int msm7627a_panic_handler(struct notifier_block *this,
 
 static struct notifier_block panic_handler = {
 	.notifier_call = msm7627a_panic_handler,
-	.priority = INT_MAX,
 };
 
 static int __init panic_register(void)

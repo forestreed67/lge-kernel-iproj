@@ -67,7 +67,6 @@ config ARCH_MSM7X30
 	select MSM_PM2 if PM
 	select HOLES_IN_ZONE if SPARSEMEM
 	select MSM_MODEM_RESTART
-	select ARM_HAS_SG_CHAIN
 
 config ARCH_QSD8X50
 	bool "QSD8X50"
@@ -176,8 +175,6 @@ config ARCH_MSM8960
 	select HOLES_IN_ZONE if SPARSEMEM
 	select MSM_RUN_QUEUE_STATS
 	select ARM_HAS_SG_CHAIN
-	select MSM_KRAIT_WFE_FIXUP
-	select MSM_IOMMU_GPU_SYNC
 
 config ARCH_MSM8930
 	bool "MSM8930"
@@ -209,8 +206,6 @@ config ARCH_MSM8930
 	select MSM_PM8X60 if PM
 	select HOLES_IN_ZONE if SPARSEMEM
 	select ARM_HAS_SG_CHAIN
-	select MSM_KRAIT_WFE_FIXUP
-	select MSM_IOMMU_GPU_SYNC
 
 config ARCH_APQ8064
 	bool "APQ8064"
@@ -237,8 +232,6 @@ config ARCH_APQ8064
 	select MIGHT_HAVE_PCI
 	select ARCH_SUPPORTS_MSI
 	select ARM_HAS_SG_CHAIN
-	select MSM_KRAIT_WFE_FIXUP
-	select MSM_IOMMU_GPU_SYNC
 
 config ARCH_MSM8974
 	bool "MSM8974"
@@ -379,9 +372,6 @@ config  ARCH_MSM_KRAITMP
 
 config  ARCH_MSM_CORTEXMP
 	select MSM_SMP
-	bool
-
-config  MSM_KRAIT_WFE_FIXUP
 	bool
 
 config  ARCH_MSM_CORTEX_A5
@@ -1288,8 +1278,10 @@ config MSM_SMD_DEBUG
 	  Support for debugging the SMD for communication
 	  between the ARM9 and ARM11
 
+#modified by mo2chunghan.lee@lge.com, 09/21/2012
 config MSM_SDIO_AL
-	depends on ((ARCH_MSM7X30 || MACH_MSM8X60_FUSN_FFA || MACH_TYPE_MSM8X60_FUSION) && HAS_WAKELOCK)
+#	depends on ((ARCH_MSM7X30 || MACH_MSM8X60_FUSN_FFA || MACH_TYPE_MSM8X60_FUSION) && HAS_WAKELOCK)
+	depends on ((MACH_LGE_I_BOARD || MACH_LGE_325_BOARD || MACH_MSM8X60_FUSN_FFA || MACH_TYPE_MSM8X60_FUSION) && HAS_WAKELOCK)
 	default y
 	tristate "SDIO-Abstraction-Layer"
 	help
@@ -2474,5 +2466,31 @@ config MSM_HSIC_SYSMON_TEST
 	  This will create a debugfs file entry named "hsic_sysmon_test" which
 	  can be read and written to send character data to the sysmon port of
 	  the modem over USB.
+
+config MSM_8X60_FUSION_GPIO_GLITCH
+	tristate "Mask unexpected glitch during boot up"
+	help
+	  Enable masking of glitch during boot up, which helps in avoiding unwanted
+	  noise or s/w code from toggling the ap2mdm err fatal.
+
+#added by mo2chunghan.lee@lge.com, 09/21/2012 -----
+config LGE_SDIO_DEBUG_CH
+    bool "SDIO DEBUG CH driver"
+    depends on MSM_SDIO_AL
+    default n
+    help
+      Support Debug Channels over SDIO interface.
+#--------------------------------------------------
+
+#silent_reset_fusion2
+config LGE_SILENT_RESET
+ tristate "Support LGE Silent Reset"
+ default n
+ depends on MACH_LGE && LGE_HANDLE_PANIC
+ help
+   LGE Silent Reset
+   Enables support for LGE Silent Reset. For turn on this feature,
+	  "echo 1 > /sys/module/lge_handle_panic/parameters/sreset_enable"
+	  or "lge_handle_panic.sreset_enable=1" from cmdline.
 
 endif

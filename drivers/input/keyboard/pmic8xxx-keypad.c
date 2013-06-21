@@ -24,6 +24,9 @@
 #include <linux/mfd/pm8xxx/gpio.h>
 #include <linux/input/pmic8xxx-keypad.h>
 
+//silent_reset_fusion2
+#include "../../../lge/include/board_lge.h"
+
 #define PM8XXX_MAX_ROWS		18
 #define PM8XXX_MAX_COLS		8
 #define PM8XXX_ROW_SHIFT	3
@@ -259,7 +262,9 @@ static int pmic8xxx_kp_read_matrix(struct pmic8xxx_kp *kp, u16 *new_state,
 
 	return rc;
 }
-
+#ifdef CONFIG_MACH_LGE_325_BOARD_VZW
+extern int LGF_TestModeGetDisableInputDevices(void);
+#endif
 static void __pmic8xxx_kp_scan_matrix(struct pmic8xxx_kp *kp, u16 *new_state,
 					 u16 *old_state)
 {
@@ -280,6 +285,16 @@ static void __pmic8xxx_kp_scan_matrix(struct pmic8xxx_kp *kp, u16 *new_state,
 					"pressed" : "released");
 
 			code = MATRIX_SCAN_CODE(row, col, PM8XXX_ROW_SHIFT);
+#ifdef CONFIG_MACH_LGE_325_BOARD_VZW			
+			if(!LGF_TestModeGetDisableInputDevices()){
+#endif
+
+// silent_reset_fusion2
+#if defined(CONFIG_LGE_SILENT_RESET_PATCH) && defined(CONFIG_MACH_LGE_325_BOARD)
+            if (on_silent_reset &&(kp->keycodes[code] == KEY_VOLUMEDOWN)){
+	                on_silent_reset = 0;
+			}
+#endif
 
 			input_event(kp->input, EV_MSC, MSC_SCAN, code);
 			input_report_key(kp->input,
@@ -287,6 +302,9 @@ static void __pmic8xxx_kp_scan_matrix(struct pmic8xxx_kp *kp, u16 *new_state,
 					!(new_state[row] & (1 << col)));
 
 			input_sync(kp->input);
+#ifdef CONFIG_MACH_LGE_325_BOARD_VZW			
+			}
+#endif			
 		}
 	}
 }

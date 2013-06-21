@@ -210,6 +210,9 @@ struct msm_mctl_post_proc_cmd {
 #define MSM_CAMERA_LED_HIGH 2
 #define MSM_CAMERA_LED_INIT 3
 #define MSM_CAMERA_LED_RELEASE 4
+//                                                                                
+#define MSM_CAMERA_LED_MOVIE 5
+//                                                                               
 
 #define MSM_CAMERA_STROBE_FLASH_NONE 0
 #define MSM_CAMERA_STROBE_FLASH_XENON 1
@@ -695,9 +698,7 @@ struct msm_stats_buf {
 	(MSM_V4L2_EXT_CAPTURE_MODE_DEFAULT+7)
 #define MSM_V4L2_EXT_CAPTURE_MODE_RDI2 \
 	(MSM_V4L2_EXT_CAPTURE_MODE_DEFAULT+8)
-#define MSM_V4L2_EXT_CAPTURE_MODE_V2X_LIVESHOT \
-	(MSM_V4L2_EXT_CAPTURE_MODE_DEFAULT+9)
-#define MSM_V4L2_EXT_CAPTURE_MODE_MAX (MSM_V4L2_EXT_CAPTURE_MODE_DEFAULT+10)
+#define MSM_V4L2_EXT_CAPTURE_MODE_MAX (MSM_V4L2_EXT_CAPTURE_MODE_DEFAULT+9)
 
 
 #define MSM_V4L2_PID_MOTION_ISO              V4L2_CID_PRIVATE_BASE
@@ -818,7 +819,30 @@ struct msm_snapshot_pp_status {
 #define CFG_START_STREAM              44
 #define CFG_STOP_STREAM               45
 #define CFG_GET_CSI_PARAMS            46
-#define CFG_MAX			47
+
+//                                                
+#define SENSOR_AE_METERING			  47
+enum AE_metering {
+	AE_METERING_DEFAULT,
+	AE_METERING_CENTER,
+	AE_METERING_MAX
+};
+//                                                
+//                                                              
+#define CFG_FIXED_FPS				  48
+#define CFG_VT_AWB_LOCK				  49  //                                                                              
+#define CFG_VT_AEC_LOCK				  50  //                                                                              
+
+#define SENSOR_AUTO_FPS_1030	0 //CAMERA_BESTSHOT_OFF
+#define SENSOR_FIXED_FPS_15		1
+#define SENSOR_FIXED_FPS_30		2
+#define SENSOR_FIXED_FPS_10		3
+#define SENSOR_FIXED_FPS_08		4
+#define SENSOR_AUTO_FPS_0730	5 //CAMERA_BESTSHOT_NIGHT
+#define SENSOR_FIXED_FPS_07		6
+//                                                              
+
+#define CFG_MAX						  51	//47
 
 
 #define MOVE_NEAR	0
@@ -831,10 +855,27 @@ struct msm_snapshot_pp_status {
 #define SENSOR_HFR_90FPS_MODE 4
 #define SENSOR_HFR_120FPS_MODE 5
 
+//                                                                                
+#define SENSOR_VT_AWB_UNLOCK	0
+#define SENSOR_VT_AWB_LOCK		1
+#define SENSOR_VT_AEC_UNLOCK	0
+#define SENSOR_VT_AEC_LOCK		1
+//                                                                                
+
+#if 0 /*                                         */
 #define SENSOR_QTR_SIZE			0
 #define SENSOR_FULL_SIZE		1
 #define SENSOR_QVGA_SIZE		2
 #define SENSOR_INVALID_SIZE		3
+#else
+#define SENSOR_QTR_SIZE			0
+#define SENSOR_FULL_SIZE		1
+//                                                              
+#define SENSOR_1080_SIZE		2
+//                                                            
+#define SENSOR_QVGA_SIZE		3
+#define SENSOR_INVALID_SIZE		4
+#endif
 
 #define CAMERA_EFFECT_OFF		0
 #define CAMERA_EFFECT_MONO		1
@@ -1048,6 +1089,14 @@ struct fps_cfg {
 	uint16_t fps_div;
 	uint32_t pict_fps_div;
 };
+
+//                                      
+// for YUV sensor[JB]
+struct fps_minmax_cfg {
+	uint8_t minfps;
+	uint8_t maxfps;
+};
+//                                      
 struct wb_info_cfg {
 	uint16_t red_gain;
 	uint16_t green_gain;
@@ -1092,6 +1141,19 @@ struct sensor_init_cfg {
 	uint8_t pict_res;
 };
 
+//Start :randy@qualcomm.com for calibration 2012.04.15
+#define ROLLOFF_CALDATA_SIZE    (17 * 13)
+typedef struct
+{
+    unsigned short           mesh_rolloff_table_size;     // TableSize
+    uint8_t                  r_gain[ROLLOFF_CALDATA_SIZE];   // RGain
+    uint8_t                  gr_gain[ROLLOFF_CALDATA_SIZE];  // GRGain
+    uint8_t                  gb_gain[ROLLOFF_CALDATA_SIZE];  // GBGain
+    uint8_t                  b_gain[ROLLOFF_CALDATA_SIZE];   // BGain
+	uint8_t					 red_ref[17];
+
+} rolloff_caldata_array_type;
+
 struct sensor_calib_data {
 	/* Color Related Measurements */
 	uint16_t r_over_g;
@@ -1104,7 +1166,11 @@ struct sensor_calib_data {
 	uint16_t stroke_amt;
 	uint16_t af_pos_1m;
 	uint16_t af_pos_inf;
+
+	/* Lens Shading Calibration Data */
+	rolloff_caldata_array_type rolloff;
 };
+//End :randy@qualcomm.com for calibration 2012.04.15
 
 enum msm_sensor_resolution_t {
 	MSM_SENSOR_RES_FULL,
@@ -1293,6 +1359,10 @@ struct sensor_cfg_data {
 		struct cord aec_cord;
 		int is_autoflash;
 		struct mirror_flip mirror_flip;
+//                                      
+// for YUV sensor[JB]
+		struct fps_minmax_cfg fps_range;
+//                                      
 	} cfg;
 };
 

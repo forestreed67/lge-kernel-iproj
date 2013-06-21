@@ -251,6 +251,15 @@ static void msm_vb2_ops_buf_cleanup(struct vb2_buffer *vb)
 		spin_unlock_irqrestore(&pcam_inst->vq_irqlock, flags);
 	}
 	pmctl = msm_camera_get_mctl(pcam->mctl_handle);
+
+//                                                                             
+	if (pmctl == NULL || pmctl->client == NULL)
+	{
+		pr_err("%s No mctl found\n", __func__);
+		buf->state = MSM_BUFFER_STATE_UNUSED;
+		return;
+	}
+
 	for (i = 0; i < vb->num_planes; i++) {
 		mem = vb2_plane_cookie(vb, i);
 		videobuf2_pmem_contig_user_put(mem, pmctl->client);
@@ -505,26 +514,13 @@ struct msm_cam_v4l2_dev_inst *msm_mctl_get_pcam_inst(
 		 * If mctl node doesnt have the instance, then
 		 * search in the user's video node */
 		if (pmctl->vfe_output_mode == VFE_OUTPUTS_MAIN_AND_THUMB
-		|| pmctl->vfe_output_mode == VFE_OUTPUTS_THUMB_AND_MAIN) {
+		|| pmctl->vfe_output_mode == VFE_OUTPUTS_THUMB_AND_MAIN
+		|| pmctl->vfe_output_mode == VFE_OUTPUTS_MAIN_AND_PREVIEW) {
 			if (pcam->mctl_node.dev_inst_map[image_mode]
 			&& is_buffer_queued(pcam, image_mode)) {
 				idx =
 				pcam->mctl_node.dev_inst_map[image_mode]
 				->my_index;
-				pcam_inst = pcam->mctl_node.dev_inst[idx];
-				D("%s Found instance %p in mctl node device\n",
-				  __func__, pcam_inst);
-			} else if (pcam->dev_inst_map[image_mode]) {
-				idx = pcam->dev_inst_map[image_mode]->my_index;
-				pcam_inst = pcam->dev_inst[idx];
-				D("%s Found instance %p in video device\n",
-				__func__, pcam_inst);
-			}
-		} else if (image_mode == MSM_V4L2_EXT_CAPTURE_MODE_V2X_LIVESHOT) {
-				image_mode = MSM_V4L2_EXT_CAPTURE_MODE_MAIN;
-			if (pcam->mctl_node.dev_inst_map[image_mode] &&
-					is_buffer_queued(pcam, image_mode)) {
-				idx = pcam->mctl_node.dev_inst_map[image_mode]->my_index;
 				pcam_inst = pcam->mctl_node.dev_inst[idx];
 				D("%s Found instance %p in mctl node device\n",
 				  __func__, pcam_inst);
@@ -585,6 +581,14 @@ int msm_mctl_reserve_free_buf(
 	}
 	spin_lock_irqsave(&pcam_inst->vq_irqlock, flags);
 	list_for_each_entry(buf, &pcam_inst->free_vq, list) {
+//                                                             
+     if(buf == NULL){
+            pr_err("%s:buf is NULL: inst = 0x%p ",
+                   __func__, pcam_inst);
+            return rc;
+     }
+//                                                             
+
 		if (buf->state != MSM_BUFFER_STATE_QUEUED)
 			continue;
 
@@ -631,7 +635,7 @@ int msm_mctl_reserve_free_buf(
 		break;
 	}
 	if (rc != 0)
-		D("%s:No free buffer available: inst = 0x%p ",
+		pr_err("%s:No free buffer available: inst = 0x%p ",
 				__func__, pcam_inst);
 	spin_unlock_irqrestore(&pcam_inst->vq_irqlock, flags);
 	return rc;

@@ -133,6 +133,11 @@ static struct msm_isp_color_fmt msm_isp_formats[] = {
 
 };
 
+#ifdef CONFIG_LGE_FLASH_LM3559
+extern int lge_flash_ctrl(struct msm_camera_sensor_info *sdata,
+	struct flash_ctrl_data *flash_info);
+#endif
+
 static int msm_get_sensor_info(
 	struct msm_cam_media_controller *mctl,
 	void __user *arg)
@@ -362,7 +367,12 @@ static int msm_mctl_cmd(struct msm_cam_media_controller *p_mctl,
 			ERR_COPY_FROM_USER();
 			rc = -EFAULT;
 		} else {
+
+		#ifdef CONFIG_LGE_FLASH_LM3559 //                  
+			rc = lge_flash_ctrl(p_mctl->sdata, &flash_info);
+		#else
 			rc = msm_flash_ctrl(p_mctl->sdata, &flash_info);
+		#endif		
 		}
 		break;
 	}

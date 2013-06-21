@@ -316,6 +316,7 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 		ctrlcmd_data = kzalloc(out->length, GFP_KERNEL);
 		if (!ctrlcmd_data) {
 			rc = -ENOMEM;
+			mutex_unlock(&server_dev->server_queue_lock); // mo2jonghoo.lee 2013.01.22
 			goto ctrlcmd_alloc_fail;
 		}
 		memcpy(ctrlcmd_data, out->value, out->length);
@@ -347,7 +348,20 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 		if (rc < 0) {
 			if (++server_dev->server_evt_id == 0)
 				server_dev->server_evt_id++;
-			pr_err("%s: wait_event error %d\n", __func__, rc);
+/*                                                                 */
+              pr_err("%s: wait_event error %d for command = %d for %d ms\n",
+              __func__, rc, out->type, out->timeout_ms);
+              if (out->type == MSM_V4L2_SET_CTRL_CMD)
+              {
+                  pr_err("__debug: Set native ctrl type is %d\n",
+                  ((struct msm_ctrl_cmd *)out->value)->type);
+              }
+              else if (out->type == MSM_V4L2_SET_CTRL)
+              {
+                  pr_err("__debug: Set ctrl type is 0x%x\n",
+                  ((struct v4l2_control *)out->value)->id);
+              }
+/*                                                                 */
 			msm_cam_stop_hardware(pcam);
 			return rc;
 		}
@@ -697,7 +711,7 @@ static int msm_server_s_ctrl(struct msm_cam_v4l2_device *pcam,
 	ctrlcmd.length = sizeof(struct v4l2_control);
 	ctrlcmd.value = (void *)ctrl_data;
 	memcpy(ctrlcmd.value, ctrl, ctrlcmd.length);
-	ctrlcmd.timeout_ms = 1000;
+	ctrlcmd.timeout_ms = 5000; //                                                                                                                                                       
 	ctrlcmd.vnode_id = pcam->vnode_id;
 	ctrlcmd.queue_idx = pcam->server_queue_idx;
 	ctrlcmd.config_ident = g_server_dev.config_info.config_dev_id[0];
@@ -729,7 +743,7 @@ static int msm_server_g_ctrl(struct msm_cam_v4l2_device *pcam,
 	ctrlcmd.length = sizeof(struct v4l2_control);
 	ctrlcmd.value = (void *)ctrl_data;
 	memcpy(ctrlcmd.value, ctrl, ctrlcmd.length);
-	ctrlcmd.timeout_ms = 1000;
+	ctrlcmd.timeout_ms = 5000; //                                                                                                                                                       
 	ctrlcmd.vnode_id = pcam->vnode_id;
 	ctrlcmd.queue_idx = pcam->server_queue_idx;
 	ctrlcmd.config_ident = g_server_dev.config_info.config_dev_id[0];
@@ -1078,6 +1092,7 @@ static int msm_camera_v4l2_qbuf(struct file *f, void *pctx,
 		/* Reject the buffer if planes array was not allocated */
 		if (pb->m.planes == NULL) {
 			pr_err("%s Planes array is null\n", __func__);
+			mutex_unlock(&pcam_inst->inst_lock); // mo2jonghoo.lee 2013.01.22
 			return -EINVAL;
 		}
 		for (i = 0; i < pcam_inst->plane_info.num_planes; i++) {
@@ -1128,6 +1143,7 @@ static int msm_camera_v4l2_dqbuf(struct file *f, void *pctx,
 		/* Reject the buffer if planes array was not allocated */
 		if (pb->m.planes == NULL) {
 			pr_err("%s Planes array is null\n", __func__);
+			mutex_unlock(&pcam_inst->inst_lock); // mo2jonghoo.lee 2013.01.22
 			return -EINVAL;
 		}
 		for (i = 0; i < pcam_inst->plane_info.num_planes; i++) {
@@ -1766,6 +1782,7 @@ int msm_server_send_ctrl(struct msm_ctrl_cmd *out,
 		ctrlcmd_data = kzalloc(out->length, GFP_KERNEL);
 		if (!ctrlcmd_data) {
 			rc = -ENOMEM;
+			mutex_unlock(&server_dev->server_queue_lock); // mo2jonghoo.lee 2013.01.22
 			goto ctrlcmd_alloc_fail;
 		}
 		memcpy(ctrlcmd_data, out->value, out->length);
@@ -1909,8 +1926,10 @@ static int msm_open(struct file *f)
 		int ges_evt = MSM_V4L2_GES_CAM_OPEN;
 		struct msm_cam_server_queue *queue;
 		server_q_idx = msm_find_free_queue();
-		if (server_q_idx < 0)
+		if (server_q_idx < 0) {
+			mutex_unlock(&pcam->vid_lock); // mo2jonghoo.lee 2013.01.22
 			return server_q_idx;
+		}
 		pcam->server_queue_idx = server_q_idx;
 		queue = &g_server_dev.server_queue[server_q_idx];
 		queue->ctrl_data = kzalloc(sizeof(uint8_t) *
@@ -2158,6 +2177,9 @@ void msm_release_ion_client(struct kref *ref)
 		struct msm_cam_media_controller, refcount);
 	pr_err("%s Calling ion_client_destroy\n", __func__);
 	ion_client_destroy(mctl->client);
+
+//                                                                             
+	mctl->client = NULL;
 }
 
 static int msm_close(struct file *f)
@@ -3335,6 +3357,7 @@ probe_fail:
 	return NULL;
 }
 
+#if 0 //                                                                                                                                       
 static struct v4l2_subdev *msm_eeprom_probe(
 	struct msm_eeprom_info *eeprom_info)
 {
@@ -3371,6 +3394,7 @@ probe_fail:
 	pr_err("%s probe_fail\n", __func__);
 	return NULL;
 }
+#endif
 
 /* register a msm sensor into the msm device, which will probe the
  * sensor HW. if the HW exist then create a video device (/dev/videoX/)
@@ -3397,7 +3421,9 @@ int msm_sensor_register(struct v4l2_subdev *sensor_sd)
 	sdata = (struct msm_camera_sensor_info *) s_ctrl->sensordata;
 
 	pcam->act_sdev = msm_actuator_probe(sdata->actuator_info);
+#if 0 //                                                                                                                                       
 	pcam->eeprom_sdev = msm_eeprom_probe(sdata->eeprom_info);
+#endif
 
 	D("%s: pcam =0x%p\n", __func__, pcam);
 

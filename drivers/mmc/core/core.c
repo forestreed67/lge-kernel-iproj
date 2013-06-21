@@ -43,6 +43,9 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
+/* If the device is not responding */
+#define MMC_CORE_TIMEOUT_MS    (10 * 60 * 1000) /* 10 minute timeout */
+
 /*
  * The Background operations can take a long time, depends on the house keeping
  * operations the card has to perform
@@ -698,9 +701,19 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 			 * previous value of 300ms is known to be
 			 * insufficient for some cards.
 			 */
-			limit_us = 3000000;
+			limit_us = 3500000;
 		else
+			#if 1 //                
+			/*           
+                                              
+                                                                         
+                                        
+                                                 
+    */
+			limit_us = 300000;
+			#else
 			limit_us = 100000;
+			#endif
 
 		/*
 		 * SDHC cards always use these fixed values.
@@ -1311,7 +1324,16 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay should be sufficient to allow the power supply
 	 * to reach the minimum voltage.
 	 */
+
+#if 1 //                
+	/*           
+                                              
+                                  
+ */
+	mmc_delay(20);
+#else
 	mmc_delay(10);
+#endif
 
 	host->ios.clock = host->f_init;
 
@@ -1322,7 +1344,15 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay must be at least 74 clock sizes, or 1 ms, or the
 	 * time required to reach a stable voltage.
 	 */
+#if 1 //                
+	/*           
+                                              
+                                  
+ */
+	mmc_delay(20);
+#else
 	mmc_delay(10);
+#endif
 
 	mmc_host_clk_release(host);
 }
@@ -1654,6 +1684,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 {
 	struct mmc_command cmd = {0};
 	unsigned int qty = 0;
+        unsigned long timeout = 0;	
 	int err;
 
 	/*
@@ -1744,8 +1775,18 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 			err = -EIO;
 			goto out;
 		}
+
+               /* Timeout if the device never becomes ready for data and
+                * never leaves the program state.
+                */
+               if (time_after(jiffies, timeout)) {
+                       pr_err("%s: Card stuck in programming state! %s\n",
+                               mmc_hostname(card->host), __func__);
+                       err =  -EIO;
+                       goto out;
+               }
 	} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
-		 R1_CURRENT_STATE(cmd.resp[0]) == R1_STATE_PRG);
+		 (R1_CURRENT_STATE(cmd.resp[0]) == R1_STATE_PRG));
 out:
 	return err;
 }
@@ -1987,15 +2028,11 @@ int mmc_can_reset(struct mmc_card *card)
 {
 	u8 rst_n_function;
 
-	if (mmc_card_sdio(card))
+	if (!mmc_card_mmc(card))
 		return 0;
-
-	if (mmc_card_mmc(card)) {
-		rst_n_function = card->ext_csd.rst_n_function;
-		if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) !=
-		    EXT_CSD_RST_N_ENABLED)
-			return 0;
-	}
+	rst_n_function = card->ext_csd.rst_n_function;
+	if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) != EXT_CSD_RST_N_ENABLED)
+		return 0;
 	return 1;
 }
 EXPORT_SYMBOL(mmc_can_reset);
@@ -2443,7 +2480,18 @@ int mmc_cache_ctrl(struct mmc_host *host, u8 enable)
 			mmc_card_is_removable(host))
 		return err;
 
-	mmc_claim_host(host);
+	/* mmc_cache_ctrl is called during the suspend path and it used
+	   mmc_claim_host which is a blocking call and the device never
+	   really suspends as it waits for the host to be available.
+	   This also leads to race conditions during runtime power
+	   management operation, for example, runtime suspend can start
+	   while the device is being runtime resumed. So in order to
+	   prevent this, mmc_try_claim_host should be used during
+	   suspend path, which is non-blocking.	*/
+
+	if (!mmc_try_claim_host(host))
+               return -EBUSY;
+
 	if (card && mmc_card_mmc(card) &&
 			(card->ext_csd.cache_size > 0)) {
 		enable = !!enable;

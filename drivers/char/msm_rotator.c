@@ -138,7 +138,13 @@ struct msm_rotator_dev {
 	struct clk *pclk;
 	int rot_clk_state;
 	struct regulator *regulator;
-	struct delayed_work rot_clk_work;
+//                                                                                                                  
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	int reg_en_cnt;
+#endif
+//                                                                                                              
+	
+    struct delayed_work rot_clk_work;
 	struct clk *imem_clk;
 	int imem_clk_state;
 	struct delayed_work imem_clk_work;
@@ -287,8 +293,12 @@ static void msm_rotator_imem_clk_work_f(struct work_struct *work)
 /* enable clocks needed by rotator block */
 static void enable_rot_clks(void)
 {
-	if (msm_rotator_dev->regulator)
-		regulator_enable(msm_rotator_dev->regulator);
+//                                                                                                              
+#if !defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+    if (msm_rotator_dev->regulator)
+        regulator_enable(msm_rotator_dev->regulator);
+#endif
+//                                                                                                              
 	if (msm_rotator_dev->core_clk != NULL)
 		clk_prepare_enable(msm_rotator_dev->core_clk);
 	if (msm_rotator_dev->pclk != NULL)
@@ -302,9 +312,38 @@ static void disable_rot_clks(void)
 		clk_disable_unprepare(msm_rotator_dev->core_clk);
 	if (msm_rotator_dev->pclk != NULL)
 		clk_disable_unprepare(msm_rotator_dev->pclk);
-	if (msm_rotator_dev->regulator)
-		regulator_disable(msm_rotator_dev->regulator);
+//                                                                                                              
+#if !defined(CONFIG_MACH_LGE_325_BOARD_VZW)        
+    if (msm_rotator_dev->regulator)
+        regulator_disable(msm_rotator_dev->regulator);
+#endif
+//                                                                                                              
+
 }
+
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+static void enable_rot_regulator(void)
+{
+	msm_rotator_dev->reg_en_cnt++;
+	if (msm_rotator_dev->reg_en_cnt == 1) {
+		pr_err("Rotator Regulator Enabled!\n");
+		if (msm_rotator_dev->regulator)
+			regulator_enable(msm_rotator_dev->regulator);
+	}
+}
+
+static void disable_rot_regulator(void)
+{
+	msm_rotator_dev->reg_en_cnt--;
+	if (msm_rotator_dev->reg_en_cnt == 0) {
+		pr_err("Rotator Regulator Disabled!\n");
+		if (msm_rotator_dev->regulator)
+			regulator_disable(msm_rotator_dev->regulator);
+	}
+}
+#endif //                             
+//                                                                                                              
 
 static void msm_rotator_rot_clk_work_f(struct work_struct *work)
 {
@@ -421,8 +460,6 @@ static int msm_rotator_get_plane_sizes(uint32_t format,	uint32_t w, uint32_t h,
 		break;
 	case MDP_Y_CRCB_H2V1:
 	case MDP_Y_CBCR_H2V1:
-	case MDP_Y_CRCB_H1V2:
-	case MDP_Y_CBCR_H1V2:
 		p->num_planes = 2;
 		p->plane_size[0] = w * h;
 		p->plane_size[1] = w * h;
@@ -471,24 +508,8 @@ static int msm_rotator_ycxcx_h2v1(struct msm_rotator_img_info *info,
 				  unsigned int out_chroma_paddr)
 {
 	int bpp;
-	uint32_t dst_format;
-	switch (info->src.format) {
-	case MDP_Y_CRCB_H2V1:
-		if (info->rotations & MDP_ROT_90)
-			dst_format = MDP_Y_CRCB_H1V2;
-		else
-			dst_format = info->src.format;
-		break;
-	case MDP_Y_CBCR_H2V1:
-		if (info->rotations & MDP_ROT_90)
-			dst_format = MDP_Y_CBCR_H1V2;
-		else
-			dst_format = info->src.format;
-		break;
-	default:
-		return -EINVAL;
-	}
-	if (info->dst.format != dst_format)
+
+	if (info->src.format != info->dst.format)
 		return -EINVAL;
 
 	bpp = get_bpp(info->src.format);
@@ -669,12 +690,9 @@ static int msm_rotator_ycrycb(struct msm_rotator_img_info *info,
 	int bpp;
 	uint32_t dst_format;
 
-	if (info->src.format == MDP_YCRYCB_H2V1) {
-		if (info->rotations & MDP_ROT_90)
-			dst_format = MDP_Y_CRCB_H1V2;
-		else
-			dst_format = MDP_Y_CRCB_H2V1;
-	} else
+	if (info->src.format == MDP_YCRYCB_H2V1)
+		dst_format = MDP_Y_CRCB_H2V1;
+	else
 		return -EINVAL;
 
 	if (info->dst.format != dst_format)
@@ -1097,7 +1115,14 @@ static int msm_rotator_do_rotate(unsigned long arg)
 		in_chroma2_paddr = in_chroma_paddr + src_planes.plane_size[1];
 
 	cancel_delayed_work(&msm_rotator_dev->rot_clk_work);
-	if (msm_rotator_dev->rot_clk_state != CLK_EN) {
+
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	enable_rot_regulator();
+#endif
+//                                                                                                              
+
+    if (msm_rotator_dev->rot_clk_state != CLK_EN) {
 		enable_rot_clks();
 		msm_rotator_dev->rot_clk_state = CLK_EN;
 	}
@@ -1298,27 +1323,16 @@ static int msm_rotator_start(unsigned long arg,
 		is_rgb = 1;
 		info.dst.format = info.src.format;
 		break;
-	case MDP_Y_CBCR_H2V1:
-	if (info.rotations & MDP_ROT_90) {
-		info.dst.format = MDP_Y_CBCR_H1V2;
-		break;
-	}
-	case MDP_Y_CRCB_H2V1:
-	if (info.rotations & MDP_ROT_90) {
-		info.dst.format = MDP_Y_CRCB_H1V2;
-		break;
-	}
 	case MDP_Y_CBCR_H2V2:
 	case MDP_Y_CRCB_H2V2:
+	case MDP_Y_CBCR_H2V1:
+	case MDP_Y_CRCB_H2V1:
 	case MDP_YCBCR_H1V1:
 	case MDP_YCRCB_H1V1:
 		info.dst.format = info.src.format;
 		break;
 	case MDP_YCRYCB_H2V1:
-		if (info.rotations & MDP_ROT_90)
-			info.dst.format = MDP_Y_CRCB_H1V2;
-		else
-			info.dst.format = MDP_Y_CRCB_H2V1;
+		info.dst.format = MDP_Y_CRCB_H2V1;
 		break;
 	case MDP_Y_CB_CR_H2V2:
 	case MDP_Y_CBCR_H2V2_TILE:
@@ -1382,6 +1396,12 @@ static int msm_rotator_start(unsigned long arg,
 		rc = -EFAULT;
 
 rotator_start_exit:
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	if (!rc)
+		enable_rot_regulator();
+#endif        
+//                                                                                                              
 	mutex_unlock(&msm_rotator_dev->rotator_lock);
 
 	return rc;
@@ -1417,6 +1437,12 @@ static int msm_rotator_finish(unsigned long arg)
 	msm_bus_scale_client_update_request(msm_rotator_dev->bus_client_handle,
 		0);
 #endif
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	if (!rc)
+		disable_rot_regulator();
+#endif
+//                                                                                                              
 	mutex_unlock(&msm_rotator_dev->rotator_lock);
 	return rc;
 }
@@ -1662,10 +1688,19 @@ static int __devinit msm_rotator_probe(struct platform_device *pdev)
 	if (msm_rotator_dev->imem_clk)
 		clk_prepare_enable(msm_rotator_dev->imem_clk);
 #endif
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	enable_rot_regulator();
+#endif    
+//                                                                                                              
 	enable_rot_clks();
 	ver = ioread32(MSM_ROTATOR_HW_VERSION);
 	disable_rot_clks();
-
+//                                                                                                                  
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)    
+	disable_rot_regulator();
+#endif
+//                                                                                                              
 #ifdef CONFIG_MSM_ROTATOR_USE_IMEM
 	if (msm_rotator_dev->imem_clk)
 		clk_disable_unprepare(msm_rotator_dev->imem_clk);
@@ -1784,6 +1819,11 @@ static int __devexit msm_rotator_remove(struct platform_device *plat_dev)
 		disable_rot_clks();
 	clk_put(msm_rotator_dev->core_clk);
 	clk_put(msm_rotator_dev->pclk);
+//                                                                                                                  
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)    
+	disable_rot_regulator();
+#endif
+//                                                                                                              
 	if (msm_rotator_dev->regulator)
 		regulator_put(msm_rotator_dev->regulator);
 	msm_rotator_dev->core_clk = NULL;
@@ -1811,6 +1851,11 @@ static int msm_rotator_suspend(struct platform_device *dev, pm_message_t state)
 		disable_rot_clks();
 		msm_rotator_dev->rot_clk_state = CLK_SUSPEND;
 	}
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	disable_rot_regulator();
+#endif    
+//                                                                                                                  
 	mutex_unlock(&msm_rotator_dev->rotator_lock);
 	return 0;
 }
@@ -1825,6 +1870,12 @@ static int msm_rotator_resume(struct platform_device *dev)
 	}
 	mutex_unlock(&msm_rotator_dev->imem_lock);
 	mutex_lock(&msm_rotator_dev->rotator_lock);
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)    
+	enable_rot_regulator();
+#endif
+//                                                                                                              
+
 	if (msm_rotator_dev->rot_clk_state == CLK_SUSPEND) {
 		enable_rot_clks();
 		msm_rotator_dev->rot_clk_state = CLK_EN;

@@ -95,7 +95,6 @@ struct acc_dev {
 	int start_requested;
 
 	int audio_mode;
-
 	/* synchronize access to our device file */
 	atomic_t open_excl;
 
@@ -482,7 +481,7 @@ static int acc_unregister_hid(struct acc_dev *dev, int id)
 	return 0;
 }
 
-static int create_bulk_endpoints(struct acc_dev *dev,
+static int __init create_bulk_endpoints(struct acc_dev *dev,
 				struct usb_endpoint_descriptor *in_desc,
 				struct usb_endpoint_descriptor *out_desc)
 {
@@ -840,7 +839,7 @@ static int acc_ctrlrequest(struct usb_composite_dev *cdev,
 			*((u16 *)cdev->req->buf) = PROTOCOL_VERSION;
 			value = sizeof(u16);
 
-			/* clear strings left over from a previous session */
+			/* clear any string left over from a previous session */
 			memset(dev->manufacturer, 0, sizeof(dev->manufacturer));
 			memset(dev->model, 0, sizeof(dev->model));
 			memset(dev->description, 0, sizeof(dev->description));

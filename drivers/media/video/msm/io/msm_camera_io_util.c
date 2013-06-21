@@ -38,7 +38,7 @@ void msm_camera_io_w_mb(u32 data, void __iomem *addr)
 u32 msm_camera_io_r(void __iomem *addr)
 {
 	uint32_t data = readl_relaxed(addr);
-	CDBG("%s: %08x %08x\n", __func__, (int) (addr), (data));
+	//CDBG("%s: %08x %08x\n", __func__, (int) (addr), (data));
 	return data;
 }
 
@@ -263,6 +263,9 @@ int msm_camera_enable_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					__func__, cam_vreg[i].reg_name);
 				goto disable_vreg;
 			}
+#ifdef CONFIG_LGE_SENSOR_MT9E013		// To remove dependency of sensor's power up sequence.
+			mdelay(10); // mo2jonghoo.lee 2013.02.01
+#endif
 		}
 	} else {
 		for (i = num_vreg-1; i >= 0; i--)
@@ -277,6 +280,42 @@ disable_vreg:
 	return rc;
 }
 
+//                                                                                          
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+static int config_gpio_onoff_table(enum msm_camera_type cam_tp, struct msm_camera_gpio_conf *gpio_conf, int gpio_en)
+{
+	int rc = 0, i = 0;
+	uint32_t *table;
+	uint32_t len;
+
+	len = gpio_conf->camera_on_table_size;
+
+	if (gpio_en)
+		table = gpio_conf->camera_on_table;
+	else
+		table = gpio_conf->camera_off_table;
+
+	for (i = 0; i < len; i++) {
+		rc = gpio_tlmm_config(table[i], GPIO_CFG_ENABLE);
+		if (rc) {
+			pr_err("%s: gpio_tlmm_config(%#8x)=%d\n",__func__, table[i], rc);
+			break;
+		}
+	}
+
+	if ((cam_tp==BACK_CAMERA_2D && gpio_en==0) || (cam_tp==FRONT_CAMERA_2D && gpio_en==1)) 
+	{
+		for (i = 0; i < gpio_conf->cam_gpio_set_tbl_size; i++) {
+			gpio_set_value_cansleep(
+				gpio_conf->cam_gpio_set_tbl[i].gpio,
+				gpio_conf->cam_gpio_set_tbl[i].flags);
+			usleep_range(gpio_conf->cam_gpio_set_tbl[i].delay,
+				gpio_conf->cam_gpio_set_tbl[i].delay + 1000);
+		}
+	}
+	return rc;
+}
+#else
 static int config_gpio_table(struct msm_camera_gpio_conf *gpio)
 {
 	int rc = 0, i = 0;
@@ -300,7 +339,8 @@ static int config_gpio_table(struct msm_camera_gpio_conf *gpio)
 	}
 	return rc;
 }
-
+#endif
+//                                                                                        
 int msm_camera_request_gpio_table(struct msm_camera_sensor_info *sinfo,
 	int gpio_en)
 {
@@ -315,8 +355,15 @@ int msm_camera_request_gpio_table(struct msm_camera_sensor_info *sinfo,
 			return -EFAULT;
 		}
 	}
+//                                                                                          
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+	if (gpio_conf->gpio_no_mux)
+		config_gpio_onoff_table(sinfo->camera_type,gpio_conf,gpio_en);
+#else
 	if (gpio_conf->gpio_no_mux)
 		config_gpio_table(gpio_conf);
+#endif
+//                                                                                        
 
 	if (gpio_en) {
 		if (!gpio_conf->gpio_no_mux) {
@@ -361,6 +408,8 @@ int msm_camera_config_gpio_table(struct msm_camera_sensor_info *sinfo,
 	struct msm_camera_gpio_conf *gpio_conf =
 		sinfo->sensor_platform_info->gpio_conf;
 	int rc = 0, i;
+
+	pr_err("%s: gpio_set_tbl_size : %d\n", __func__,gpio_conf->cam_gpio_set_tbl_size);
 
 	if (gpio_en) {
 		for (i = 0; i < gpio_conf->cam_gpio_set_tbl_size; i++) {

@@ -882,12 +882,10 @@ static struct msm_bus_scale_pdata usb_bus_scale_pdata = {
 };
 
 static int phy_init_seq[] = {
-	0x68, 0x81, /* update DC voltage level */
+	0x38, 0x81, /* update DC voltage level */
 	0x24, 0x82, /* set pre-emphasis and rise/fall time */
 	-1
 };
-
-#define MSM_MPM_PIN_USB1_OTGSESSVLD	40
 
 static struct msm_otg_platform_data msm_otg_pdata = {
 	.mode			= USB_OTG,
@@ -897,7 +895,6 @@ static struct msm_otg_platform_data msm_otg_pdata = {
 	.power_budget		= 750,
 	.bus_scale_table	= &usb_bus_scale_pdata,
 	.phy_init_seq		= phy_init_seq,
-	.mpm_otgsessvld_int	= MSM_MPM_PIN_USB1_OTGSESSVLD,
 };
 
 static struct msm_usb_host_platform_data msm_ehci_host_pdata3 = {
@@ -1729,31 +1726,14 @@ static struct mdm_vddmin_resource mdm_vddmin_rscs = {
 	.mdm2ap_vddmin_gpio = 80,
 };
 
-static struct gpiomux_setting mdm2ap_status_gpio_run_cfg = {
-	.func = GPIOMUX_FUNC_GPIO,
-	.drv = GPIOMUX_DRV_8MA,
-	.pull = GPIOMUX_PULL_NONE,
-};
-
 static struct mdm_platform_data mdm_platform_data = {
 	.mdm_version = "3.0",
 	.ramdump_delay_ms = 2000,
 	.early_power_on = 1,
 	.sfr_query = 1,
-	.send_shdn = 1,
 	.vddmin_resource = &mdm_vddmin_rscs,
 	.peripheral_platform_device = &apq8064_device_hsic_host,
 	.ramdump_timeout_ms = 120000,
-	.mdm2ap_status_gpio_run_cfg = &mdm2ap_status_gpio_run_cfg,
-};
-
-static struct mdm_platform_data dsda_qsc_platform_data = {
-	.mdm_version = "3.0",
-	.ramdump_delay_ms = 2000,
-	.soft_reset_inverted = 1,
-	.ramdump_timeout_ms = 600000,
-	.no_powerdown_after_ramdumps = 1,
-	.image_upgrade_supported = 1,
 };
 
 static struct tsens_platform_data apq_tsens_pdata  = {
@@ -2247,7 +2227,6 @@ static struct platform_device *common_devices[] __initdata = {
 	&apq_lpa_pcm,
 	&apq_compr_dsp,
 	&apq_multi_ch_pcm,
-	&apq_lowlatency_pcm,
 	&apq_pcm_hostless,
 	&apq_cpudai_afe_01_rx,
 	&apq_cpudai_afe_01_tx,
@@ -2935,7 +2914,6 @@ static void enable_avc_i2c_bus(void)
 
 static void __init apq8064_common_init(void)
 {
-	u32 platform_version;
 	msm_tsens_early_init(&apq_tsens_pdata);
 	msm_thermal_init(&msm_thermal_pdata);
 	if (socinfo_init() < 0)
@@ -2980,19 +2958,8 @@ static void __init apq8064_common_init(void)
 	apq8064_init_mmc();
 
 	if (machine_is_apq8064_mtp()) {
-		platform_version = socinfo_get_platform_version();
-		if (socinfo_get_platform_subtype() == PLATFORM_SUBTYPE_DSDA) {
-			dsda_qsc_8064_device.dev.platform_data =
-				&dsda_qsc_platform_data;
-			platform_device_register(&dsda_qsc_8064_device);
-		} else if (SOCINFO_VERSION_MINOR(platform_version) == 1) {
-			i2s_mdm_8064_device.dev.platform_data =
-				&mdm_platform_data;
-			platform_device_register(&i2s_mdm_8064_device);
-		} else {
-			mdm_8064_device.dev.platform_data = &mdm_platform_data;
-			platform_device_register(&mdm_8064_device);
-		}
+		mdm_8064_device.dev.platform_data = &mdm_platform_data;
+		platform_device_register(&mdm_8064_device);
 	}
 	platform_device_register(&apq8064_slim_ctrl);
 	slim_register_board_info(apq8064_slim_devices,

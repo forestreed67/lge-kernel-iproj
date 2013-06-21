@@ -112,7 +112,9 @@
 #define HDMI_VFRMT_MAX			59
 #define HDMI_VFRMT_FORCE_32BIT		0x7FFFFFFF
 
+#if 1 /*                                                          */
 extern int ext_resolution;
+#endif
 
 struct hdmi_disp_mode_timing_type {
 	uint32	video_format;
@@ -210,10 +212,8 @@ struct external_common_state_type {
 	boolean hpd_state;
 	struct kobject *uevent_kobj;
 	uint32 video_resolution;
-	boolean default_res_supported;
 	struct device *dev;
 	struct switch_dev sdev;
-	struct switch_dev audio_sdev;
 #ifdef CONFIG_FB_MSM_HDMI_3D
 	boolean format_3d;
 	void (*switch_3d)(boolean on);
@@ -238,6 +238,12 @@ struct external_common_state_type {
 	uint32 audio_data_blocks[16];
 	int (*read_edid_block)(int block, uint8 *edid_buf);
 	int (*hpd_feature)(int on);
+#ifdef CONFIG_LGE_MHL_SII9244
+	boolean boot_completed;
+#endif
+#endif
+#ifdef CONFIG_LGE_MHL_SII9244	/*                                        */   
+	int cable_connected;
 #endif
 };
 
@@ -272,5 +278,9 @@ ssize_t video_3d_format_2string(uint32 format, char *buf);
 
 int external_common_state_create(struct platform_device *pdev);
 void external_common_state_remove(void);
+
+#ifdef CONFIG_LGE_MHL_SII9244	/*                                        */
+extern int mhl_power_on(void);
+#endif
 
 #endif /* __EXTERNAL_COMMON_H__ */

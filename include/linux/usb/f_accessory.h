@@ -130,7 +130,6 @@
  *	data            none
  */
 #define ACCESSORY_SET_AUDIO_MODE         58
-
 /* ioctls for retrieving strings set by the host */
 #define ACCESSORY_GET_STRING_MANUFACTURER   _IOW('M', 1, char[256])
 #define ACCESSORY_GET_STRING_MODEL          _IOW('M', 2, char[256])

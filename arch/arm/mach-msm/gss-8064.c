@@ -195,7 +195,7 @@ static int __init gss_8064_init(void)
 {
 	int ret;
 
-	if (!(cpu_is_apq8064() || cpu_is_apq8064ab()))
+	if (!cpu_is_apq8064())
 		return -ENODEV;
 
 	ret = smsm_state_cb_register(SMSM_MODEM_STATE, SMSM_RESET,

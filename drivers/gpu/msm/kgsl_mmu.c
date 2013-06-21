@@ -320,7 +320,7 @@ unsigned int kgsl_mmu_get_ptsize(void)
 	if (KGSL_MMU_TYPE_GPU == kgsl_mmu_type)
 		return CONFIG_MSM_KGSL_PAGE_TABLE_SIZE;
 	else if (KGSL_MMU_TYPE_IOMMU == kgsl_mmu_type)
-		return SZ_2G - KGSL_PAGETABLE_BASE;
+		return SZ_2G;
 	else
 		return 0;
 }
@@ -813,8 +813,11 @@ void kgsl_mmu_set_mmutype(char *mmutype)
 		cpu_is_apq8064() ? KGSL_MMU_TYPE_NONE : KGSL_MMU_TYPE_GPU;
 
 	/* Use the IOMMU if it is found */
-	if (iommu_present(&platform_bus_type))
-		kgsl_mmu_type = KGSL_MMU_TYPE_IOMMU;
+//                                     
+/* Requirement RCA 12_1246 */
+//	if (iommu_present(&platform_bus_type))
+//		kgsl_mmu_type = KGSL_MMU_TYPE_IOMMU;
+//#endif
 
 	if (mmutype && !strncmp(mmutype, "gpummu", 6))
 		kgsl_mmu_type = KGSL_MMU_TYPE_GPU;

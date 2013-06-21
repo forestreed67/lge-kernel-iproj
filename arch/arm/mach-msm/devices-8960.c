@@ -50,7 +50,6 @@
 #include "scm-pas.h"
 #include <mach/msm_dcvs.h>
 #include <mach/iommu_domains.h>
-#include <mach/msm_xo.h>
 
 #ifdef CONFIG_MSM_MPM
 #include <mach/mpm.h>
@@ -1037,8 +1036,6 @@ static struct pil_q6v4_pdata msm_8960_q6_mss_fw_data = {
 	.strap_ahb_lower = 0x00000080,
 	.aclk_reg = SFAB_MSS_Q6_FW_ACLK_CTL,
 	.jtag_clk_reg = MSS_Q6FW_JTAG_CLK_CTL,
-	.xo1_id = MSM_XO_TCXO_A0,
-	.xo2_id = MSM_XO_TCXO_A1,
 	.name = "modem_fw",
 	.depends = "q6",
 	.pas_id = PAS_MODEM_FW,
@@ -1895,11 +1892,6 @@ struct platform_device msm_multi_ch_pcm = {
 	.id	= -1,
 };
 
-struct platform_device msm_lowlatency_pcm = {
-	.name	= "msm-lowlatency-pcm-dsp",
-	.id	= -1,
-};
-
 struct platform_device msm_pcm_routing = {
 	.name	= "msm-pcm-routing",
 	.id	= -1,
@@ -2113,8 +2105,6 @@ static struct fs_driver_data mdp_fs_data = {
 		{ .name = "lut_clk" },
 		{ .name = "tv_src_clk" },
 		{ .name = "tv_clk" },
-		{ .name = "reset1_clk" },
-		{ .name = "reset2_clk" },
 		{ 0 }
 	},
 	.bus_port0 = MSM_BUS_MASTER_MDP_PORT0,
@@ -3317,8 +3307,8 @@ struct platform_device msm8960_rpm_log_device = {
 };
 
 static struct msm_rpmstats_platform_data msm_rpm_stat_pdata = {
-	.phys_addr_base = 0x0010DD04,
-	.phys_size = SZ_256,
+	.phys_addr_base = 0x0010D204,
+	.phys_size = SZ_8K,
 };
 
 struct platform_device msm8960_rpm_stat_device = {
@@ -3822,7 +3812,6 @@ struct platform_device msm8960_cache_dump_device = {
 #define AP2MDM_PMIC_PWR_EN		22
 #define AP2MDM_KPDPWR_N			79
 #define AP2MDM_SOFT_RESET		78
-#define USB_SW				25
 
 static struct resource sglte_resources[] = {
 	{
@@ -3865,12 +3854,6 @@ static struct resource sglte_resources[] = {
 		.start	= AP2MDM_SOFT_RESET,
 		.end	= AP2MDM_SOFT_RESET,
 		.name	= "AP2MDM_SOFT_RESET",
-		.flags	= IORESOURCE_IO,
-	},
-	{
-		.start	= USB_SW,
-		.end	= USB_SW,
-		.name	= "USB_SW",
 		.flags	= IORESOURCE_IO,
 	},
 };

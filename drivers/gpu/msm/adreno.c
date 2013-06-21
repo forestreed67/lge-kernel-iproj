@@ -133,7 +133,6 @@ const unsigned int hang_detect_regs_count = ARRAY_SIZE(hang_detect_regs);
  */
 
 #define ANY_ID (~0)
-#define NO_VER (~0)
 
 static const struct {
 	enum adreno_gpurev gpurev;
@@ -143,50 +142,43 @@ static const struct {
 	struct adreno_gpudev *gpudev;
 	unsigned int istore_size;
 	unsigned int pix_shader_start;
-	/* Size of an instruction in dwords */
-	unsigned int instruction_size;
-	/* size of gmem for gpu*/
-	unsigned int gmem_size;
-	/* version of pm4 microcode that supports sync_lock
-	   between CPU and GPU for SMMU-v1 programming */
-	unsigned int sync_lock_pm4_ver;
-	/* version of pfp microcode that supports sync_lock
-	   between CPU and GPU for SMMU-v1 programming */
-	unsigned int sync_lock_pfp_ver;
+	unsigned int instruction_size; /* Size of an instruction in dwords */
+	unsigned int gmem_size; /* size of gmem for gpu*/
 } adreno_gpulist[] = {
 	{ ADRENO_REV_A200, 0, 2, ANY_ID, ANY_ID,
 		"yamato_pm4.fw", "yamato_pfp.fw", &adreno_a2xx_gpudev,
-		512, 384, 3, SZ_256K, NO_VER, NO_VER },
+		512, 384, 3, SZ_256K },
 	{ ADRENO_REV_A203, 0, 1, 1, ANY_ID,
 		"yamato_pm4.fw", "yamato_pfp.fw", &adreno_a2xx_gpudev,
-		512, 384, 3, SZ_256K, NO_VER, NO_VER },
+		512, 384, 3, SZ_256K },
 	{ ADRENO_REV_A205, 0, 1, 0, ANY_ID,
 		"yamato_pm4.fw", "yamato_pfp.fw", &adreno_a2xx_gpudev,
-		512, 384, 3, SZ_256K, NO_VER, NO_VER },
+		512, 384, 3, SZ_256K },
 	{ ADRENO_REV_A220, 2, 1, ANY_ID, ANY_ID,
 		"leia_pm4_470.fw", "leia_pfp_470.fw", &adreno_a2xx_gpudev,
-		512, 384, 3, SZ_512K, NO_VER, NO_VER },
+		512, 384, 3, SZ_512K },
 	/*
 	 * patchlevel 5 (8960v2) needs special pm4 firmware to work around
 	 * a hardware problem.
 	 */
 	{ ADRENO_REV_A225, 2, 2, 0, 5,
 		"a225p5_pm4.fw", "a225_pfp.fw", &adreno_a2xx_gpudev,
-		1536, 768, 3, SZ_512K, NO_VER, NO_VER },
+		1536, 768, 3, SZ_512K },
 	{ ADRENO_REV_A225, 2, 2, 0, 6,
 		"a225_pm4.fw", "a225_pfp.fw", &adreno_a2xx_gpudev,
-		1536, 768, 3, SZ_512K, 0x225011, 0x225002 },
+		1536, 768, 3, SZ_512K },
 	{ ADRENO_REV_A225, 2, 2, ANY_ID, ANY_ID,
 		"a225_pm4.fw", "a225_pfp.fw", &adreno_a2xx_gpudev,
-		1536, 768, 3, SZ_512K, 0x225011, 0x225002 },
+		1536, 768, 3, SZ_512K },
 	/* A3XX doesn't use the pix_shader_start */
 	{ ADRENO_REV_A305, 3, 0, 5, ANY_ID,
 		"a300_pm4.fw", "a300_pfp.fw", &adreno_a3xx_gpudev,
-		512, 0, 2, SZ_256K, 0x3FF037, 0x3FF016 },
+		512, 0, 2, SZ_256K },
 	/* A3XX doesn't use the pix_shader_start */
 	{ ADRENO_REV_A320, 3, 2, 0, ANY_ID,
 		"a300_pm4.fw", "a300_pfp.fw", &adreno_a3xx_gpudev,
-		512, 0, 2, SZ_512K, 0x3FF037, 0x3FF016 },
+		512, 0, 2, SZ_512K },
+
 };
 
 static irqreturn_t adreno_irq_handler(struct kgsl_device *device)
@@ -273,7 +265,7 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 					uint32_t flags)
 {
 	unsigned int pt_val, reg_pt_val;
-	unsigned int link[250];
+	unsigned int link[200];
 	unsigned int *cmds = &link[0];
 	int sizedwords = 0;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
@@ -306,11 +298,6 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 					KGSL_IOMMU_CONTEXT_USER,
 					device->mmu.setstate_memory.gpuaddr +
 					KGSL_IOMMU_SETSTATE_NOP_OFFSET);
-
-	cmds += adreno_add_idle_cmds(adreno_dev, cmds);
-
-	/* Acquire GPU-CPU sync Lock here */
-	cmds += kgsl_mmu_sync_lock(&device->mmu, cmds);
 
 	pt_val = kgsl_mmu_pt_get_base_addr(device->mmu.hwpagetable);
 	if (flags & KGSL_MMUFLAGS_PTUPDATE) {
@@ -348,6 +335,14 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 				device->mmu.setstate_memory.gpuaddr +
 				KGSL_IOMMU_SETSTATE_NOP_OFFSET);
 		}
+		/* invalidate all base pointers */
+		*cmds++ = cp_type3_packet(CP_INVALIDATE_STATE, 1);
+		*cmds++ = 0x7fff;
+
+		if (flags & KGSL_MMUFLAGS_TLBFLUSH)
+			cmds += __adreno_add_idle_indirect_cmds(cmds,
+				device->mmu.setstate_memory.gpuaddr +
+				KGSL_IOMMU_SETSTATE_NOP_OFFSET);
 	}
 	if (flags & KGSL_MMUFLAGS_TLBFLUSH) {
 		/*
@@ -381,9 +376,6 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 		}
 	}
 
-	/* Release GPU-CPU sync Lock here */
-	cmds += kgsl_mmu_sync_unlock(&device->mmu, cmds);
-
 	if (cpu_is_msm8960())
 		cmds += adreno_add_change_mh_phys_limit_cmds(cmds,
 			reg_map_desc[num_iommu_units - 1]->gpuaddr - PAGE_SIZE,
@@ -395,14 +387,8 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 			device->mmu.setstate_memory.gpuaddr +
 			KGSL_IOMMU_SETSTATE_NOP_OFFSET);
 
-	cmds += adreno_add_idle_cmds(adreno_dev, cmds);
-
 	sizedwords += (cmds - &link[0]);
 	if (sizedwords) {
-		/* invalidate all base pointers */
-		*cmds++ = cp_type3_packet(CP_INVALIDATE_STATE, 1);
-		*cmds++ = 0x7fff;
-		sizedwords += 2;
 		/*
 		 * add an interrupt at the end of commands so that the smmu
 		 * disable clock off function will get called
@@ -417,10 +403,6 @@ static void adreno_iommu_setstate(struct kgsl_device *device,
 			&link[0], sizedwords);
 		kgsl_mmu_disable_clk_on_ts(&device->mmu,
 		adreno_dev->ringbuffer.timestamp[KGSL_MEMSTORE_GLOBAL], true);
-	}
-	if (sizedwords > (sizeof(link)/sizeof(unsigned int))) {
-		KGSL_DRV_ERR(device, "Temp command buffer overflow\n");
-		BUG();
 	}
 done:
 	if (num_iommu_units)
@@ -561,7 +543,7 @@ a3xx_getchipid(struct kgsl_device *device)
 
 	unsigned int version = socinfo_get_version();
 
-	if (cpu_is_apq8064() || cpu_is_apq8064ab()) {
+	if (cpu_is_apq8064()) {
 
 		/* A320 */
 		majorid = 2;
@@ -572,15 +554,11 @@ a3xx_getchipid(struct kgsl_device *device)
 		 * up to user space via the patchid
 		 */
 
-		if (SOCINFO_VERSION_MAJOR(version) == 2) {
-			patchid = 2;
-		} else {
-			if ((SOCINFO_VERSION_MAJOR(version) == 1) &&
-				(SOCINFO_VERSION_MINOR(version) == 1))
-					patchid = 1;
-			else
-					patchid = 0;
-		}
+		if ((SOCINFO_VERSION_MAJOR(version) == 1) &&
+			(SOCINFO_VERSION_MINOR(version) == 1))
+			patchid = 1;
+		else
+			patchid = 0;
 	} else if (cpu_is_msm8930() || cpu_is_msm8930aa() || cpu_is_msm8627()) {
 
 		/* A305 */
@@ -634,7 +612,7 @@ a2xx_getchipid(struct kgsl_device *device)
 	if (cpu_is_qsd8x50())
 		patchid = 1;
 	else if (cpu_is_msm8960() &&
-			SOCINFO_VERSION_MAJOR(soc_platform_version) >= 3)
+			SOCINFO_VERSION_MAJOR(soc_platform_version) == 3)
 		patchid = 6;
 	else if (cpu_is_msm8625() && minorid == 0)
 		minorid = 1;
@@ -647,8 +625,8 @@ a2xx_getchipid(struct kgsl_device *device)
 static unsigned int
 adreno_getchipid(struct kgsl_device *device)
 {
-	if (cpu_is_apq8064() || cpu_is_apq8064ab() || cpu_is_msm8930() ||
-		cpu_is_msm8930aa() || cpu_is_msm8627())
+	if (cpu_is_apq8064() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
+	    cpu_is_msm8627())
 		return a3xx_getchipid(device);
 	else
 		return a2xx_getchipid(device);
@@ -692,8 +670,6 @@ adreno_identify_gpu(struct adreno_device *adreno_dev)
 	adreno_dev->pix_shader_start = adreno_gpulist[i].pix_shader_start;
 	adreno_dev->instruction_size = adreno_gpulist[i].instruction_size;
 	adreno_dev->gmem_size = adreno_gpulist[i].gmem_size;
-	adreno_dev->gpulist_index = i;
-
 }
 
 static int __devinit
@@ -761,35 +737,11 @@ static int adreno_start(struct kgsl_device *device, unsigned int init_ram)
 	/* Identify the specific GPU */
 	adreno_identify_gpu(adreno_dev);
 
-	if (adreno_ringbuffer_read_pm4_ucode(device)) {
-		KGSL_DRV_ERR(device, "Reading pm4 microcode failed %s\n",
-			adreno_dev->pm4_fwfile);
-		BUG_ON(1);
-	}
-
-	if (adreno_ringbuffer_read_pfp_ucode(device)) {
-		KGSL_DRV_ERR(device, "Reading pfp microcode failed %s\n",
-			adreno_dev->pfp_fwfile);
-		BUG_ON(1);
-	}
-
 	if (adreno_dev->gpurev == ADRENO_REV_UNKNOWN) {
 		KGSL_DRV_ERR(device, "Unknown chip ID %x\n",
 			adreno_dev->chip_id);
 		goto error_clk_off;
 	}
-
-
-	/*
-	 * Check if firmware supports the sync lock PM4 packets needed
-	 * for IOMMUv1
-	 */
-
-	if ((adreno_dev->pm4_fw_version >=
-		adreno_gpulist[adreno_dev->gpulist_index].sync_lock_pm4_ver) &&
-		(adreno_dev->pfp_fw_version >=
-		adreno_gpulist[adreno_dev->gpulist_index].sync_lock_pfp_ver))
-		device->mmu.flags |= KGSL_MMU_FLAGS_IOMMU_SYNC;
 
 	/* Set up the MMU */
 	if (adreno_is_a2xx(adreno_dev)) {
@@ -1718,9 +1670,6 @@ unsigned int adreno_hang_detect(struct kgsl_device *device,
 	unsigned int i;
 
 	if (!adreno_dev->fast_hang_detect)
-		return 0;
-
-	if (device->ftbl->isidle(device))
 		return 0;
 
 	for (i = 0; i < hang_detect_regs_count; i++) {

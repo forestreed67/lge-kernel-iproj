@@ -517,6 +517,24 @@ out:
 	return ret;
 }
 
+/*                                        */
+#if defined(CONFIG_MACH_LGE_I_BOARD_DCM) && defined(CONFIG_LGE_SWITCHING_CHARGER_BQ24160_DOCOMO_ONLY)	/*                                        */
+unsigned charging_current;
+
+
+void msm_otg_set_chg_current(unsigned mA)
+{
+	charging_current = mA;
+}
+
+unsigned msm_otg_get_chg_current(void)
+{
+	return charging_current;
+}
+EXPORT_SYMBOL(msm_otg_get_chg_current);
+#endif
+/*                                        */
+
 static int msm_otg_set_power(struct usb_phy *xceiv, unsigned mA)
 {
 	static enum chg_type 	curr_chg = USB_CHG_TYPE__INVALID;
@@ -524,6 +542,10 @@ static int msm_otg_set_power(struct usb_phy *xceiv, unsigned mA)
 	struct msm_otg_platform_data *pdata = dev->pdata;
 	enum chg_type 		new_chg = atomic_read(&dev->chg_type);
 	unsigned 		charge = mA;
+
+#if defined(CONFIG_MACH_LGE_I_BOARD_DCM) && defined(CONFIG_LGE_SWITCHING_CHARGER_BQ24160_DOCOMO_ONLY)	/*                                        */
+	msm_otg_set_chg_current(mA);
+#endif
 
 	/* Call chg_connected only if the charger has changed */
 	if (new_chg != curr_chg && pdata->chg_connected) {
@@ -536,9 +558,6 @@ static int msm_otg_set_power(struct usb_phy *xceiv, unsigned mA)
 				test_bit(ID_B, &dev->inputs))
 		charge = USB_IDCHG_MAX;
 
-	if (dev->curr_power == charge)
-		return 0;
-
 	pr_debug("Charging with %dmA current\n", charge);
 	/* Call vbus_draw only if the charger is of known type and also
 	 * ignore request to stop charging as a result of suspend interrupt
@@ -547,8 +566,6 @@ static int msm_otg_set_power(struct usb_phy *xceiv, unsigned mA)
 	if (pdata->chg_vbus_draw && new_chg != USB_CHG_TYPE__INVALID &&
 		(charge || new_chg != USB_CHG_TYPE__WALLCHARGER))
 			pdata->chg_vbus_draw(charge);
-
-	dev->curr_power = charge;
 
 	if (new_chg == USB_CHG_TYPE__WALLCHARGER) {
 		wake_lock(&dev->wlock);
@@ -1234,7 +1251,7 @@ void msm_otg_set_vbus_state(int online)
 static irqreturn_t msm_otg_irq(int irq, void *data)
 {
 	struct msm_otg *dev = data;
-	u32 otgsc, sts, pc;
+	u32 otgsc, sts, pc, sts_mask;
 	irqreturn_t ret = IRQ_HANDLED;
 	int work = 0;
 	enum usb_otg_state state;
@@ -1255,16 +1272,12 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 	otgsc = readl(USB_OTGSC);
 	sts = readl(USB_USBSTS);
 
-	/* At times during USB disconnect, hardware generates 1MSIS interrupt
-	 * during PHY reset, which leads to irq not handled error as IRQ_NONE
-	 * is notified. To workaround this issue, check for all the
-	 * OTG_INTR_STS_MASK bits and if set, clear them and notify IRQ_HANDLED.
-	 */
-	if (!((otgsc & OTGSC_INTR_STS_MASK) || (sts & STS_PCI))) {
+	sts_mask = (otgsc & OTGSC_INTR_MASK) >> 8;
+
+	if (!((otgsc & sts_mask) || (sts & STS_PCI))) {
 		ret = IRQ_NONE;
 		goto out;
 	}
-	writel_relaxed(otgsc, USB_OTGSC);
 
 	spin_lock_irqsave(&dev->lock, flags);
 	state = dev->phy.state;
@@ -1286,8 +1299,10 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 			set_bit(A_BUS_REQ, &dev->inputs);
 			clear_bit(ID, &dev->inputs);
 		}
+		writel(otgsc, USB_OTGSC);
 		work = 1;
 	} else if (otgsc & OTGSC_BSVIS) {
+		writel(otgsc, USB_OTGSC);
 		/* BSV interrupt comes when operating as an A-device
 		 * (VBUS on/off).
 		 * But, handle BSV when charger is removed from ACA in ID_A
@@ -1305,6 +1320,7 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 		work = 1;
 	} else if (otgsc & OTGSC_DPIS) {
 		pr_debug("DPIS detected\n");
+		writel(otgsc, USB_OTGSC);
 		set_bit(A_SRP_DET, &dev->inputs);
 		set_bit(A_BUS_REQ, &dev->inputs);
 		work = 1;
@@ -2596,6 +2612,16 @@ struct usb_phy_io_ops msm_otg_io_ops = {
 	.write = usb_ulpi_write,
 };
 
+static void msm_otg_reset(struct msm_otg *dev)
+{
+	int ret = 0;
+	int n = 0;
+	for ( n=0; n<100 ; n++ ) {
+		ret = msm_otg_phy_reset(dev);
+		if ( ret == 0 ) break;
+	}
+}
+
 static int __init msm_otg_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -2867,6 +2893,7 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 	}
 #endif
 
+	msm_otg_reset(dev);
 
 	return 0;
 

@@ -165,7 +165,7 @@ void mdp4_dtv_pipe_queue(int cndx, struct mdp4_overlay_pipe *pipe)
 static void mdp4_dtv_blt_ov_update(struct mdp4_overlay_pipe *pipe);
 static void mdp4_dtv_wait4dmae(int cndx);
 
-int mdp4_dtv_pipe_commit(int cndx, int wait)
+int mdp4_dtv_pipe_commit(int cndx, int wait)	// QCT Performance
 {
 
 	int  i, undx;
@@ -177,7 +177,7 @@ int mdp4_dtv_pipe_commit(int cndx, int wait)
 	unsigned long flags;
 	int cnt = 0;
 
-	vctrl = &vsync_ctrl_db[cndx];
+	vctrl = &vsync_ctrl_db[cndx];	// QCT Performance
 	mutex_lock(&vctrl->update_lock);
 	undx =  vctrl->update_ndx;
 	vp = &vctrl->vlist[undx];
@@ -237,7 +237,7 @@ int mdp4_dtv_pipe_commit(int cndx, int wait)
 	mdp4_stat.overlay_commit[pipe->mixer_num]++;
 
 	if (wait)
-		mdp4_dtv_wait4dmae(cndx);
+		mdp4_dtv_wait4dmae(cndx);	// QCT Performance
 
 	return cnt;
 }
@@ -322,7 +322,7 @@ ssize_t mdp4_dtv_show_event(struct device *dev,
 	struct vsycn_ctrl *vctrl;
 	ssize_t ret = 0;
 	unsigned long flags;
-	u64 vsync_tick;
+	u64 vsync_tick;		// QCT Patch SR#01081922 From G ATnT
 
 	cndx = 0;
 	vctrl = &vsync_ctrl_db[0];
@@ -337,19 +337,22 @@ ssize_t mdp4_dtv_show_event(struct device *dev,
 		INIT_COMPLETION(vctrl->vsync_comp);
 	vctrl->wait_vsync_cnt++;
 	spin_unlock_irqrestore(&vctrl->spin_lock, flags);
-
+	// QCT Patch SR#01081922 From G ATnT [S]
 	ret = wait_for_completion_interruptible_timeout(&vctrl->vsync_comp,
-		msecs_to_jiffies(VSYNC_PERIOD * 4));
+			msecs_to_jiffies(VSYNC_PERIOD * 4));
 	if (ret <= 0) {
 		vctrl->wait_vsync_cnt = 0;
-		return -EBUSY;
+		vsync_tick = ktime_to_ns(ktime_get());
+		ret = snprintf(buf, PAGE_SIZE, "VSYNC=%llu", vsync_tick);
+		buf[strlen(buf) + 1] = '\0';
+		return ret;
 	}
-
-	spin_lock_irqsave(&vctrl->spin_lock, flags);
-	vsync_tick = ktime_to_ns(vctrl->vsync_time);
+	spin_lock_irqsave(&vctrl->spin_lock, flags);	
+	vsync_tick = ktime_to_ns(vctrl->vsync_time);	
 	spin_unlock_irqrestore(&vctrl->spin_lock, flags);
-
 	ret = snprintf(buf, PAGE_SIZE, "VSYNC=%llu", vsync_tick);
+	// QCT Patch SR#01081922 From G ATnT [E]
+
 	buf[strlen(buf) + 1] = '\0';
 	return ret;
 }
@@ -584,10 +587,8 @@ int mdp4_dtv_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	int ret = 0;
 	int cndx = 0;
-	int undx;
 	struct vsycn_ctrl *vctrl;
 	struct mdp4_overlay_pipe *pipe;
-	struct vsync_update *vp;
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 
@@ -627,21 +628,6 @@ int mdp4_dtv_off(struct platform_device *pdev)
 	}
 
 	mdp4_overlay_panel_mode_unset(MDP4_MIXER1, MDP4_PANEL_DTV);
-
-	if (vctrl->vsync_irq_enabled) {
-		vctrl->vsync_irq_enabled = 0;
-		vsync_irq_disable(INTR_PRIMARY_VSYNC, MDP_PRIM_VSYNC_TERM);
-	}
-
-	undx =  vctrl->update_ndx;
-	vp = &vctrl->vlist[undx];
-	if (vp->update_cnt) {
-		/*
-		 * pipe's iommu will be freed at next overlay play
-		 * and iommu_drop statistic will be increased by one
-		 */
-		vp->update_cnt = 0;     /* empty queue */
-	}
 
 	ret = panel_next_off(pdev);
 	mdp_footswitch_ctrl(FALSE);
@@ -844,8 +830,9 @@ void mdp4_external_vsync_dtv(void)
 	pr_debug("%s: cpu=%d\n", __func__, smp_processor_id());
 
 	spin_lock(&vctrl->spin_lock);
-	vctrl->vsync_time = ktime_get();
 
+	// QCT Patch SR#01081922 From G ATnT
+	vctrl->vsync_time = ktime_get();
 	if (vctrl->wait_vsync_cnt) {
 		complete_all(&vctrl->vsync_comp);
 		vctrl->wait_vsync_cnt = 0;
@@ -1062,7 +1049,10 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 
 	mutex_lock(&mfd->dma->ov_mutex);
 	mdp4_overlay_mdp_perf_upd(mfd, 1);
-	mdp4_dtv_pipe_commit(cndx, 0);
+
+        // QCT Performance
+  	if (mdp4_dtv_pipe_commit(cndx, 0))  //mo2sanghyun.lee 2012.12.27 to prevent shaking for video screen(HDMI) 
+  		mdp4_dtv_wait4dmae(0);
 	mdp4_overlay_mdp_perf_upd(mfd, 0);
 	mutex_unlock(&mfd->dma->ov_mutex);
 }

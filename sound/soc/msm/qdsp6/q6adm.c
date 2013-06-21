@@ -294,8 +294,7 @@ static int32_t adm_callback(struct apr_client_data *data, void *priv)
 
 		switch (data->opcode) {
 		case ADM_CMDRSP_COPP_OPEN:
-		case ADM_CMDRSP_MULTI_CHANNEL_COPP_OPEN:
-		case ADM_CMDRSP_MULTI_CHANNEL_COPP_OPEN_V3: {
+		case ADM_CMDRSP_MULTI_CHANNEL_COPP_OPEN: {
 			struct adm_copp_open_respond *open = data->payload;
 			if (open->copp_id == INVALID_COPP_ID) {
 				pr_err("%s: invalid coppid rxed %d\n",
@@ -603,7 +602,8 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology)
 	int ret = 0;
 	int index;
 
-	pr_debug("%s: port %d path:%d rate:%d mode:%d\n", __func__,
+//                                                                                     
+    pr_info("%s: port %d path:%d rate:%d mode:%d\n", __func__,
 				port_id, path, rate, channel_mode);
 
 	port_id = afe_convert_virtual_to_portid(port_id);
@@ -708,7 +708,7 @@ fail_cmd:
 
 
 int adm_multi_ch_copp_open(int port_id, int path, int rate, int channel_mode,
-				int topology, int perfmode)
+				int topology)
 {
 	struct adm_multi_ch_copp_open_command open;
 	int ret = 0;
@@ -746,17 +746,7 @@ int adm_multi_ch_copp_open(int port_id, int path, int rate, int channel_mode,
 
 		open.hdr.pkt_size =
 			sizeof(struct adm_multi_ch_copp_open_command);
-
-		if (perfmode) {
-			pr_debug("%s Performance mode", __func__);
-			open.hdr.opcode = ADM_CMD_MULTI_CHANNEL_COPP_OPEN_V3;
-			open.flags = ADM_MULTI_CH_COPP_OPEN_PERF_MODE_BIT;
-			open.reserved = PCM_BITS_PER_SAMPLE;
-		} else {
-			open.hdr.opcode = ADM_CMD_MULTI_CHANNEL_COPP_OPEN;
-			open.reserved = 0;
-		}
-
+		open.hdr.opcode = ADM_CMD_MULTI_CHANNEL_COPP_OPEN;
 		memset(open.dev_channel_mapping, 0, 8);
 
 		if (channel_mode == 1)	{
@@ -790,6 +780,8 @@ int adm_multi_ch_copp_open(int port_id, int path, int rate, int channel_mode,
 					channel_mode);
 			return -EINVAL;
 		}
+
+
 		open.hdr.src_svc = APR_SVC_ADM;
 		open.hdr.src_domain = APR_DOMAIN_APPS;
 		open.hdr.src_port = port_id;
@@ -828,7 +820,8 @@ int adm_multi_ch_copp_open(int port_id, int path, int rate, int channel_mode,
 		open.channel_config = channel_mode & 0x00FF;
 		open.rate  = rate;
 
-		pr_debug("%s: channel_config=%d port_id=%d rate=%d"
+//                                                                              
+        pr_info("%s: channel_config=%d port_id=%d rate=%d"
 			" topology_id=0x%X\n", __func__, open.channel_config,
 			open.endpoint_id1, open.rate,
 			open.topology_id);
@@ -1128,7 +1121,8 @@ int adm_close(int port_id)
 	if (afe_validate_port(port_id) < 0)
 		return -EINVAL;
 
-	pr_debug("%s port_id=%d index %d\n", __func__, port_id, index);
+//                                                                                         
+    pr_info("%s port_id=%d index %d\n", __func__, port_id, index);
 
 	if (!(atomic_read(&this_adm.copp_cnt[index]))) {
 		pr_err("%s: copp count for port[%d]is 0\n", __func__, port_id);

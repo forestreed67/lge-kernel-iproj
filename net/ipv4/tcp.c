@@ -1490,6 +1490,8 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
+
+
 			if (WARN(before(*seq, TCP_SKB_CB(skb)->seq),
 				 "recvmsg bug: copied %X seq %X rcvnxt %X fl %X\n",
 				 *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt,
@@ -1503,6 +1505,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 				goto found_ok_skb;
 			if (tcp_hdr(skb)->fin)
 				goto found_fin_ok;
+
 			WARN(!(flags & MSG_PEEK),
 			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
@@ -1797,6 +1800,7 @@ recv_urg:
 	if (err > 0)
 		uid_stat_tcp_rcv(current_uid(), err);
 	goto out;
+
 }
 EXPORT_SYMBOL(tcp_recvmsg);
 

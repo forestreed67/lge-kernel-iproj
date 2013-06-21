@@ -21,7 +21,7 @@
 #include <linux/ratelimit.h>
 #include <mach/usb_bridge.h>
 
-#define MAX_RX_URBS			100
+#define MAX_RX_URBS			50
 #define RMNET_RX_BUFSIZE		2048
 
 #define STOP_SUBMIT_URB_LIMIT		500
@@ -990,10 +990,10 @@ static void bridge_disconnect(struct usb_interface *intf)
 	}
 
 	ch_id--;
-	ctrl_bridge_disconnect(dev->id);
+	ctrl_bridge_disconnect(ch_id);
 	platform_device_unregister(dev->pdev);
 	usb_set_intfdata(intf, NULL);
-	__dev[dev->id] = NULL;
+	__dev[ch_id] = NULL;
 
 	cancel_work_sync(&dev->process_rx_w);
 	cancel_work_sync(&dev->kevent);

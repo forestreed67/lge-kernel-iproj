@@ -26,6 +26,7 @@
 #include <linux/clk.h>
 #include <mach/clk.h>
 #include <mach/camera.h>
+#include <mach/dal_axi.h>
 #include "msm_vfe7x27a_v4l2.h"
 #include "msm.h"
 
@@ -114,6 +115,7 @@
 #define VFE_ASYNC_TIMER2_START  29
 #define VFE_STATS_AUTOFOCUS_UPDATE  30
 #define VFE_STATS_WB_EXP_UPDATE  31
+#define VFE_IMMEDIATE_STOP      32
 #define VFE_ROLL_OFF_UPDATE  33
 #define VFE_DEMOSAICv3_BPC_UPDATE  34
 #define VFE_TESTGEN_START  35
@@ -238,7 +240,7 @@ struct cmd_id_map cmds_map[] = {
 	{VFE_CMD_CAPTURE, VFE_START, QDSP_CMDQUEUE,
 			"VFE_CMD_CAPTURE", "VFE_START"},
 	{VFE_CMD_DUMMY_7, VFE_MAX, VFE_MAX},
-	{VFE_CMD_STOP, VFE_STOP, QDSP_CMDQUEUE, "VFE_CMD_STOP", "VFE_STOP"},
+        {VFE_CMD_STOP, VFE_IMMEDIATE_STOP, QDSP_CMDQUEUE, "VFE_CMD_STOP", "VFE_IMMEDIATE_STOP"},
 	{VFE_CMD_GET_HW_VERSION, VFE_MAX, VFE_MAX},
 	{VFE_CMD_GET_FRAME_SKIP_COUNTS, VFE_MAX, VFE_MAX},
 	{VFE_CMD_OUTPUT1_BUFFER_ENQ, VFE_MAX, VFE_MAX},
@@ -427,7 +429,6 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 		/* messages */
 		getevent(data, len);
 		CDBG("%s:messages:msg_id=%d\n", __func__, id);
-
 		switch (id) {
 		case MSG_SNAPSHOT:
 			while (vfe2x_ctrl->snap.frame_cnt <
@@ -439,6 +440,16 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 						len, getevent);
 			}
 			vfe2x_send_isp_msg(vfe2x_ctrl, MSG_ID_SNAPSHOT_DONE);
+			vfe2x_ctrl->snapshot_done = 1;
+			if (vfe2x_ctrl->stop_pending) {
+				cmd_data = buf;
+				*(uint32_t *)cmd_data = VFE_STOP;
+				/* Send Stop cmd here */
+				len  = 4;
+				msm_adsp_write(vfe_mod, QDSP_CMDQUEUE,
+						cmd_data, len);
+				vfe2x_ctrl->stop_pending = 0;
+			}
 			kfree(data);
 			return;
 		case MSG_OUTPUT_S:
@@ -570,12 +581,7 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 				kfree(data);
 				return;
 			}
-			if (vfe2x_ctrl->liveshot_enabled)
-				free_buf = vfe2x_check_free_buffer(
-					VFE_MSG_OUTPUT_IRQ,
-					VFE_MSG_V2X_LIVESHOT_PRIMARY);
-			else
-				free_buf = vfe2x_check_free_buffer(
+			free_buf = vfe2x_check_free_buffer(
 					VFE_MSG_OUTPUT_IRQ,
 					VFE_MSG_OUTPUT_PRIMARY);
 			CDBG("free_buf = %x\n",
@@ -1091,14 +1097,12 @@ static struct msm_free_buf *vfe2x_check_free_buffer(int id, int path)
 
 	vfe2x_subdev_notify(id, path);
 	if (op_mode & SNAPSHOT_MASK_MODE) {
-		if (path == VFE_MSG_OUTPUT_PRIMARY ||
-				path == VFE_MSG_V2X_LIVESHOT_PRIMARY)
+		if (path == VFE_MSG_OUTPUT_PRIMARY)
 			outch = &vfe2x_ctrl->snap;
 		else if (path == VFE_MSG_OUTPUT_SECONDARY)
 			outch = &vfe2x_ctrl->thumb;
 	} else {
-		if (path == VFE_MSG_OUTPUT_PRIMARY ||
-				path == VFE_MSG_V2X_LIVESHOT_PRIMARY) {
+		if (path == VFE_MSG_OUTPUT_PRIMARY) {
 			if (vfe2x_ctrl->zsl_mode)
 				outch = &vfe2x_ctrl->zsl_prim;
 			else
@@ -1120,14 +1124,12 @@ static int vfe2x_configure_pingpong_buffers(int id, int path)
 	vfe2x_subdev_notify(id, path);
 	CDBG("Opmode = %d\n", op_mode);
 	if (op_mode & SNAPSHOT_MASK_MODE) {
-		if (path == VFE_MSG_OUTPUT_PRIMARY ||
-				path == VFE_MSG_V2X_LIVESHOT_PRIMARY)
+		if (path == VFE_MSG_OUTPUT_PRIMARY)
 			outch = &vfe2x_ctrl->snap;
 		else if (path == VFE_MSG_OUTPUT_SECONDARY)
 			outch = &vfe2x_ctrl->thumb;
 	} else {
-		if (path == VFE_MSG_OUTPUT_PRIMARY ||
-				path == VFE_MSG_V2X_LIVESHOT_PRIMARY) {
+		if (path == VFE_MSG_OUTPUT_PRIMARY) {
 			if (vfe2x_ctrl->zsl_mode)
 				outch = &vfe2x_ctrl->zsl_prim;
 			else
@@ -1155,12 +1157,10 @@ static struct buf_info *vfe2x_get_ch(int path)
 	if (op_mode & SNAPSHOT_MASK_MODE) {
 		if (path == VFE_MSG_OUTPUT_SECONDARY)
 			ch = &vfe2x_ctrl->thumb;
-		else if (path == VFE_MSG_OUTPUT_PRIMARY ||
-					path == VFE_MSG_V2X_LIVESHOT_PRIMARY)
+		else if (path == VFE_MSG_OUTPUT_PRIMARY)
 			ch = &vfe2x_ctrl->snap;
 	} else {
-		if (path == VFE_MSG_OUTPUT_PRIMARY ||
-					path == VFE_MSG_V2X_LIVESHOT_PRIMARY) {
+		if (path == VFE_MSG_OUTPUT_PRIMARY) {
 			if (vfe2x_ctrl->zsl_mode)
 				ch = &vfe2x_ctrl->zsl_prim;
 			else
@@ -1496,6 +1496,7 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 		if (queue == QDSP_CMDQUEUE) {
 			switch (vfecmd.id) {
 			case VFE_CMD_RESET:
+				axi_halt(AXI_HALT_PORT_VFE);
 				msm_camio_vfe_blk_reset_2();
 				vfestopped = 0;
 				break;
@@ -1530,16 +1531,12 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 				vfestopped = 1;
 				spin_lock_irqsave(&vfe2x_ctrl->table_lock,
 						flags);
-				if (op_mode & SNAPSHOT_MASK_MODE) {
-					vfe2x_ctrl->stop_pending = 0;
-					vfe2x_send_isp_msg(vfe2x_ctrl,
-						msgs_map[MSG_STOP_ACK].
-						isp_id);
-					spin_unlock_irqrestore(
-							&vfe2x_ctrl->table_lock,
-							flags);
-					return 0;
-				}
+				if ((op_mode & SNAPSHOT_MASK_MODE) && !vfe2x_ctrl->snapshot_done) {
+                                        vfe2x_ctrl->stop_pending = 1;
+                                        spin_unlock_irqrestore(&vfe2x_ctrl->table_lock,
+                                                flags);
+                                        return 0;
+                                }
 				if ((!list_empty(&vfe2x_ctrl->table_q)) ||
 						vfe2x_ctrl->tableack_pending) {
 					CDBG("stop pending\n");
@@ -1549,6 +1546,7 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 							flags);
 					return 0;
 				}
+				vfe2x_ctrl->snapshot_done = 0;
 				spin_unlock_irqrestore(&vfe2x_ctrl->table_lock,
 						flags);
 				vfe2x_ctrl->vfe_started = 0;

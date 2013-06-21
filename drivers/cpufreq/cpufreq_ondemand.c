@@ -871,6 +871,27 @@ static void dbs_input_event(struct input_handle *handle, unsigned int type,
 {
 	int i;
 
+#ifdef CONFIG_LGE_PM_CURRENT_CONSUMPTION_FIX
+	if(!strcmp((char*)(handle->dev->name), "accelerometer") || !strcmp((char*)(handle->dev->name), "proximity") ||
+	!strcmp((char*)(handle->dev->name), "magnetic_field") || !strcmp((char*)(handle->dev->name), "gyroscope")||
+	!strcmp((char*)(handle->dev->name), "light") || !strcmp((char*)(handle->dev->name), "synaptics_ts")/* || !strcmp((char*)(handle->dev->name), "touch_dev")*/)
+	{
+		//printk(KERN_INFO "Not Bumping up CPU for %s", handle->dev->name);
+		return;
+	}
+	else
+	{
+        if ((dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MAXLEVEL) ||
+            (dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MINLEVEL)) {
+                /* nothing to do */
+                return;
+        }
+	
+		for_each_online_cpu(i) {
+			queue_work_on(i, input_wq, &per_cpu(dbs_refresh_work, i));
+		}
+	}
+#else
 	if ((dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MAXLEVEL) ||
 		(dbs_tuners_ins.powersave_bias == POWERSAVE_BIAS_MINLEVEL)) {
 		/* nothing to do */
@@ -880,6 +901,7 @@ static void dbs_input_event(struct input_handle *handle, unsigned int type,
 	for_each_online_cpu(i) {
 		queue_work_on(i, input_wq, &per_cpu(dbs_refresh_work, i));
 	}
+#endif
 }
 
 static int dbs_input_connect(struct input_handler *handler,
@@ -994,6 +1016,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			rc = input_register_handler(&dbs_input_handler);
 		mutex_unlock(&dbs_mutex);
 
+		mutex_init(&this_dbs_info->timer_mutex);
 
 		if (!ondemand_powersave_bias_setspeed(
 					this_dbs_info->cur_policy,
@@ -1070,9 +1093,6 @@ static int __init cpufreq_gov_dbs_init(void)
 		return -EFAULT;
 	}
 	for_each_possible_cpu(i) {
-		struct cpu_dbs_info_s *this_dbs_info =
-			&per_cpu(od_cpu_dbs_info, i);
-		mutex_init(&this_dbs_info->timer_mutex);
 		INIT_WORK(&per_cpu(dbs_refresh_work, i), dbs_refresh_callback);
 	}
 

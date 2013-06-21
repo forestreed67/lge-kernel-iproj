@@ -417,12 +417,26 @@ static void adb_release_work(struct work_struct *w)
 
 static int adb_open(struct inode *ip, struct file *fp)
 {
-	pr_info("adb_open\n");
+	//pr_info("adb_open\n");
 	if (!_adb_dev)
+#ifdef CONFIG_USB_G_LGE_ANDROID	/*                                        */
+	{
+		pr_info("%s: -ENODEV\n", __func__);
+#endif
 		return -ENODEV;
+#ifdef CONFIG_USB_G_LGE_ANDROID	/*                                        */
+	}
+#endif
 
 	if (adb_lock(&_adb_dev->open_excl))
+#ifdef CONFIG_USB_G_LGE_ANDROID	/*                                        */
+	{
+		pr_info("%s: -EBUSY\n", __func__);
+#endif
 		return -EBUSY;
+#ifdef CONFIG_USB_G_LGE_ANDROID	/*                                        */
+	}
+#endif
 
 	fp->private_data = _adb_dev;
 
@@ -437,7 +451,7 @@ static int adb_open(struct inode *ip, struct file *fp)
 
 static int adb_release(struct inode *ip, struct file *fp)
 {
-	pr_info("adb_release\n");
+	//pr_info("adb_release\n");
 
 	/*
 	 * When USB cable is plugged out, adb reader is unblocked and

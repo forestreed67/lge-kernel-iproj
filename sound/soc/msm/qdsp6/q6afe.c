@@ -365,7 +365,8 @@ static void afe_send_cal_block(int32_t path, u16 port_id)
 	int						result = 0;
 	struct acdb_cal_block				cal_block;
 	struct afe_port_cmd_set_param_no_payload	afe_cal;
-	pr_debug("%s: path %d\n", __func__, path);
+//	pr_debug("%s: path %d\n", __func__, path);
+	pr_info("%s: path %d\n", __func__, path);	//                      
 
 	get_afe_cal(path, &cal_block);
 	if (cal_block.cal_size <= 0) {
@@ -444,7 +445,8 @@ int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		ret = -EINVAL;
 		return ret;
 	}
-	pr_debug("%s: %d %d\n", __func__, port_id, rate);
+//	pr_debug("%s: %d %d\n", __func__, port_id, rate);
+	pr_info("%s: %d %d\n", __func__, port_id, rate);	//                      
 
 	if ((port_id == RT_PROXY_DAI_001_RX) ||
 		(port_id == RT_PROXY_DAI_002_TX))
@@ -604,7 +606,8 @@ int afe_open(u16 port_id, union afe_port_config *afe_config, int rate)
 		return ret;
 	}
 
-	pr_debug("%s: %d %d\n", __func__, port_id, rate);
+//	pr_debug("%s: %d %d\n", __func__, port_id, rate);
+	pr_info("%s: %d %d\n", __func__, port_id, rate);	//                      
 
 	if ((port_id == RT_PROXY_DAI_001_RX) ||
 		(port_id == RT_PROXY_DAI_002_TX))

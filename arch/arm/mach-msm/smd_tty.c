@@ -78,7 +78,9 @@ struct smd_config {
 };
 
 static struct smd_config smd_configs[] = {
+#if !defined (CONFIG_MACH_LGE_325_BOARD_VZW) /* mbhyun.kim 2013.03.21 : support two modem for Global Roaming */
 	{0, "DS", NULL, SMD_APPS_MODEM},
+#endif
 	{1, "APPS_FM", NULL, SMD_APPS_WCNSS},
 	{2, "APPS_RIVA_BT_ACL", NULL, SMD_APPS_WCNSS},
 	{3, "APPS_RIVA_BT_CMD", NULL, SMD_APPS_WCNSS},

@@ -69,10 +69,6 @@ struct msm_sensor_id_info_t {
 struct msm_sensor_exp_gain_info_t {
 	uint16_t coarse_int_time_addr;
 	uint16_t global_gain_addr;
-	uint16_t digital_gain_gr;
-	uint16_t digital_gain_r;
-	uint16_t digital_gain_b;
-	uint16_t digital_gain_gb;
 	uint16_t vert_offset;
 };
 
@@ -257,7 +253,14 @@ long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 
 int32_t msm_sensor_get_csi_params(struct msm_sensor_ctrl_t *s_ctrl,
 		struct csi_lane_params_t *sensor_output_info);
+#if defined(CONFIG_LGE_CAMERA) && defined(CONFIG_LGE_SENSOR_MT9M114) && defined(CONFIG_MSM_CAMERA_V4L2)
+int32_t msm_sensor_setting_114(struct msm_sensor_ctrl_t *s_ctrl,
+			int update_type, int res);
 
+int32_t msm_sensor_write_init_settings_114(struct msm_sensor_ctrl_t *s_ctrl);
+
+void msm_sensor_start_stream_114(struct msm_sensor_ctrl_t *s_ctrl);
+#endif
 struct msm_sensor_ctrl_t *get_sctrl(struct v4l2_subdev *sd);
 
 #define VIDIOC_MSM_SENSOR_CFG \

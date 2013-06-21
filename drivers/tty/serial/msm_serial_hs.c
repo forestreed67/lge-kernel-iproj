@@ -168,7 +168,6 @@ struct msm_hs_port {
 	struct work_struct clock_off_w; /* work for actual clock off */
 	struct workqueue_struct *hsuart_wq; /* hsuart workqueue */
 	struct mutex clk_mutex; /* mutex to guard against clock off/clock on */
-	bool tty_flush_receive;
 };
 
 #define MSM_UARTDM_BURST_SIZE 16   /* DM burst size (in bytes) */
@@ -391,6 +390,8 @@ static int __devexit msm_hs_remove(struct platform_device *pdev)
 
 	struct msm_hs_port *msm_uport;
 	struct device *dev;
+	struct msm_serial_hs_platform_data *pdata = pdev->dev.platform_data;
+
 
 	if (pdev->id < 0 || pdev->id >= UARTDM_NR) {
 		printk(KERN_ERR "Invalid plaform device ID = %d\n", pdev->id);
@@ -399,6 +400,10 @@ static int __devexit msm_hs_remove(struct platform_device *pdev)
 
 	msm_uport = &q_uart_port[pdev->id];
 	dev = msm_uport->uport.dev;
+
+	if (pdata && pdata->gpio_config)
+		if (pdata->gpio_config(0))
+			dev_err(dev, "GPIO config error\n");
 
 	sysfs_remove_file(&pdev->dev.kobj, &dev_attr_clock.attr);
 	debugfs_remove(msm_uport->loopback_dir);
@@ -790,6 +795,46 @@ unsigned int msm_hs_tx_empty(struct uart_port *uport)
 	return ret;
 }
 EXPORT_SYMBOL(msm_hs_tx_empty);
+
+//                                             
+//ADD: 0019639: [F200][BT] Support Bluetooth low power mode
+#if 1 //                        
+
+
+// Get UART Clock State : 
+int msm_hs_get_bt_uport_clock_state(struct uart_port *uport)
+{
+	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
+	//unsigned long flags;	
+	int ret = CLOCK_REQUEST_UNAVAILABLE;
+
+	//mutex_lock(&msm_uport->clk_mutex);
+	//spin_lock_irqsave(&uport->lock, flags);
+
+	switch(msm_uport->clk_state)
+	{
+		case MSM_HS_CLK_ON:
+		case MSM_HS_CLK_PORT_OFF:
+			printk(KERN_ERR "UART Clock already on or port not use : %d\n", msm_uport->clk_state);
+			ret = CLOCK_REQUEST_UNAVAILABLE;
+			break;
+		case MSM_HS_CLK_REQUEST_OFF:
+		case MSM_HS_CLK_OFF:
+			printk(KERN_ERR "Uart clock off. Please clock on : %d\n", msm_uport->clk_state);
+			ret = CLOCK_REQUEST_AVAILABLE;
+			break;
+	}
+
+	//spin_unlock_irqrestore(&uport->lock, flags);
+	//mutex_unlock(&msm_uport->clk_mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(msm_hs_get_bt_uport_clock_state);
+
+
+#endif/*                    */
+//                                           
 
 /*
  *  Standard API, Stop transmitter.
@@ -1236,13 +1281,6 @@ static void msm_hs_enable_ms_locked(struct uart_port *uport)
 
 }
 
-static void msm_hs_flush_buffer(struct uart_port *uport)
-{
-	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
-
-	msm_uport->tty_flush_receive = true;
-}
-
 /*
  *  Standard API, Break Signal
  *
@@ -1458,14 +1496,7 @@ static irqreturn_t msm_hs_isr(int irq, void *dev)
 		 */
 		mb();
 		/* Complete DMA TX transactions and submit new transactions */
-
-		/* Do not update tx_buf.tail if uart_flush_buffer already
-						called in serial core */
-		if (!msm_uport->tty_flush_receive)
-			tx_buf->tail = (tx_buf->tail +
-					tx->tx_count) & ~UART_XMIT_SIZE;
-		else
-			msm_uport->tty_flush_receive = false;
+		tx_buf->tail = (tx_buf->tail + tx->tx_count) & ~UART_XMIT_SIZE;
 
 		tx->dma_in_flight = 0;
 
@@ -1631,9 +1662,6 @@ static int msm_hs_startup(struct uart_port *uport)
 	unsigned long flags;
 	unsigned int data;
 	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
-	struct platform_device *pdev = to_platform_device(uport->dev);
-	const struct msm_serial_hs_platform_data *pdata =
-					pdev->dev.platform_data;
 	struct circ_buf *tx_buf = &uport->state->xmit;
 	struct msm_hs_tx *tx = &msm_uport->tx;
 
@@ -1652,10 +1680,6 @@ static int msm_hs_startup(struct uart_port *uport)
 		wake_unlock(&msm_uport->dma_wake_lock);
 		return ret;
 	}
-
-	if (pdata && pdata->gpio_config)
-		if (unlikely(pdata->gpio_config(1)))
-			dev_err(uport->dev, "Cannot configure gpios\n");
 
 	/* Set auto RFR Level */
 	data = msm_hs_read(uport, UARTDM_MR1_ADDR);
@@ -1937,6 +1961,10 @@ static int __devinit msm_hs_probe(struct platform_device *pdev)
 		if (unlikely(msm_uport->wakeup.irq < 0))
 			return -ENXIO;
 
+		if (pdata->gpio_config)
+			if (unlikely(pdata->gpio_config(1)))
+				dev_err(uport->dev, "Cannot configure"
+					"gpios\n");
 	}
 
 	resource = platform_get_resource_byname(pdev, IORESOURCE_DMA,
@@ -2074,9 +2102,6 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	unsigned int data;
 	unsigned long flags;
 	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
-	struct platform_device *pdev = to_platform_device(uport->dev);
-	const struct msm_serial_hs_platform_data *pdata =
-				pdev->dev.platform_data;
 
 	if (msm_uport->tx.dma_in_flight) {
 		spin_lock_irqsave(&uport->lock, flags);
@@ -2139,10 +2164,6 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	free_irq(uport->irq, msm_uport);
 	if (use_low_power_wakeup(msm_uport))
 		free_irq(msm_uport->wakeup.irq, msm_uport);
-
-	if (pdata && pdata->gpio_config)
-		if (pdata->gpio_config(0))
-			dev_err(uport->dev, "GPIO config error\n");
 }
 
 static void __exit msm_serial_hs_exit(void)
@@ -2219,8 +2240,15 @@ static struct uart_ops msm_hs_ops = {
 	.config_port = msm_hs_config_port,
 	.release_port = msm_hs_release_port,
 	.request_port = msm_hs_request_port,
-	.flush_buffer = msm_hs_flush_buffer,
 };
+//Blue-Z Verifier
+#if defined(CONFIG_MACH_LGE_I_BOARD) || defined(CONFIG_MACH_LGE_325_BOARD)
+struct uart_port* msm_hs_get_bt_uport(unsigned int line)
+{
+	return &q_uart_port[line].uport;
+}
+EXPORT_SYMBOL(msm_hs_get_bt_uport);
+#endif
 
 module_init(msm_serial_hs_init);
 module_exit(msm_serial_hs_exit);

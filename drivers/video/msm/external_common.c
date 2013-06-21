@@ -506,6 +506,7 @@ static ssize_t hdmi_common_wta_hpd(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	ssize_t ret = strnlen(buf, PAGE_SIZE);
+#ifndef CONFIG_LGE_MHL_SII9244  /*                                        */
 	int hpd;
 	if (hdmi_prim_display)
 		hpd = 1;
@@ -530,6 +531,7 @@ static ssize_t hdmi_common_wta_hpd(struct device *dev,
 	} else {
 		DEV_DBG("%s: 'not supported'\n", __func__);
 	}
+#endif //                      
 
 	return ret;
 }
@@ -828,6 +830,22 @@ static ssize_t hdmi_common_rda_hdmi_primary(struct device *dev,
 	DEV_DBG("%s: '%d'\n", __func__,	hdmi_prim_display);
 	return ret;
 }
+#ifdef CONFIG_LGE_MHL_SII9244
+static ssize_t hdmi_common_wta_boot_completed(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	ssize_t ret = strnlen(buf, PAGE_SIZE);
+
+	if(external_common_state->hpd_feature_on &&
+		!external_common_state->boot_completed){
+		DEV_DBG("%s: hpd_power_on \n",__func__);
+		external_common_state->hpd_feature(1);
+	}
+	external_common_state->boot_completed = 1;
+
+	return ret;
+}
+#endif
 
 static DEVICE_ATTR(video_mode, S_IRUGO | S_IWUGO,
 	external_common_rda_video_mode, external_common_wta_video_mode);
@@ -859,6 +877,9 @@ static DEVICE_ATTR(format_3d, S_IRUGO | S_IWUGO, hdmi_3d_rda_format_3d,
 	hdmi_3d_wta_format_3d);
 #endif
 static DEVICE_ATTR(hdmi_primary, S_IRUGO, hdmi_common_rda_hdmi_primary, NULL);
+#ifdef CONFIG_LGE_MHL_SII9244
+static DEVICE_ATTR(hdmi_boot_completed, S_IWUGO, NULL, hdmi_common_wta_boot_completed);
+#endif
 
 static struct attribute *external_common_fs_attrs[] = {
 	&dev_attr_video_mode.attr,
@@ -887,6 +908,9 @@ static struct attribute *external_common_fs_attrs[] = {
 	&dev_attr_cec_wr_frame.attr,
 #endif /* CONFIG_FB_MSM_HDMI_MSM_PANEL_CEC_SUPPORT */
 	&dev_attr_hdmi_primary.attr,
+#ifdef CONFIG_LGE_MHL_SII9244
+	&dev_attr_hdmi_boot_completed.attr,
+#endif
 	NULL,
 };
 static struct attribute_group external_common_fs_attr_group = {
@@ -1407,37 +1431,30 @@ static void add_supported_video_format(
 	struct hdmi_disp_mode_list_type *disp_mode_list,
 	uint32 video_format)
 {
-	const struct hdmi_disp_mode_timing_type *timing;
-	boolean supported = false;
-	boolean mhl_supported = true;
+	const struct hdmi_disp_mode_timing_type *timing =
+		hdmi_common_get_supported_mode(video_format);
+	boolean supported = timing != NULL;
 
 	if (video_format >= HDMI_VFRMT_MAX)
 		return;
 
-	timing = hdmi_common_get_supported_mode(video_format);
-	supported = timing != NULL;
 	DEV_DBG("EDID: format: %d [%s], %s\n",
 		video_format, video_format_2string(video_format),
 		supported ? "Supported" : "Not-Supported");
-
-	if (mhl_is_connected()) {
-		const struct hdmi_disp_mode_timing_type *mhl_timing =
-			hdmi_mhl_get_supported_mode(video_format);
-		mhl_supported = mhl_timing != NULL;
-		DEV_DBG("EDID: format: %d [%s], %s by MHL\n",
+	if (supported) {
+		if (mhl_is_connected()) {
+			const struct hdmi_disp_mode_timing_type *mhl_timing =
+				hdmi_mhl_get_supported_mode(video_format);
+			boolean mhl_supported = mhl_timing != NULL;
+			DEV_DBG("EDID: format: %d [%s], %s by MHL\n",
 			video_format, video_format_2string(video_format),
-			mhl_supported ? "Supported" : "Not-Supported");
-	}
-
-	if (supported && mhl_supported) {
-		disp_mode_list->disp_mode_list[
+				mhl_supported ? "Supported" : "Not-Supported");
+			if (mhl_supported)
+				disp_mode_list->disp_mode_list[
 			disp_mode_list->num_of_elements++] = video_format;
-		if (video_format == external_common_state->video_resolution) {
-			DEV_DBG("%s: Default resolution %d [%s] supported\n",
-					__func__, video_format,
-					video_format_2string(video_format));
-			external_common_state->default_res_supported = true;
-		}
+		} else
+			disp_mode_list->disp_mode_list[
+			disp_mode_list->num_of_elements++] = video_format;
 	}
 }
 
@@ -1873,7 +1890,6 @@ int hdmi_common_read_edid(void)
 	memset(&external_common_state->disp_mode_list, 0,
 		sizeof(external_common_state->disp_mode_list));
 	memset(edid_buf, 0, sizeof(edid_buf));
-	external_common_state->default_res_supported = false;
 
 	status = hdmi_common_read_edid_block(0, edid_buf);
 	if (status || !check_edid_header(edid_buf)) {
@@ -1979,7 +1995,6 @@ error:
 	external_common_state->disp_mode_list.num_of_elements = 1;
 	external_common_state->disp_mode_list.disp_mode_list[0] =
 		external_common_state->video_resolution;
-	external_common_state->default_res_supported = true;
 	return status;
 }
 EXPORT_SYMBOL(hdmi_common_read_edid);
@@ -2022,6 +2037,24 @@ bool hdmi_common_get_video_format_from_drv_data(struct msm_fb_data_type *mfd)
 				: HDMI_VFRMT_1440x576i50_16_9;
 			break;
 		case 1920:
+/*
+ *	Disable HD(Quality)-60Hz Feature
+ *	SII9244 Does not Support This
+ **/
+#ifdef	CONFIG_LGE_MHL_SII9244
+			if (mfd->var_frame_rate == 50000)
+				// Does not Support 50Hz Mode
+				format = HDMI_VFRMT_1920x1080p30_16_9;
+			else if (mfd->var_frame_rate == 24000)
+				format = HDMI_VFRMT_1920x1080p24_16_9;
+			else if (mfd->var_frame_rate == 25000)
+				format = HDMI_VFRMT_1920x1080p25_16_9;
+			else if (mfd->var_frame_rate == 30000)
+				format = HDMI_VFRMT_1920x1080p30_16_9;
+			else
+				// Does not Support 60Hz or Above Mode
+				format = HDMI_VFRMT_1920x1080p30_16_9;
+#else	/* QCT Original */
 			if (mfd->var_yres == 540) {/* interlaced */
 				format = HDMI_VFRMT_1920x1080i60_16_9;
 			} else if (mfd->var_yres == 1080) {
@@ -2036,6 +2069,7 @@ bool hdmi_common_get_video_format_from_drv_data(struct msm_fb_data_type *mfd)
 				else
 					format = HDMI_VFRMT_1920x1080p60_16_9;
 			}
+#endif
 			break;
 		}
 	}
@@ -2123,13 +2157,51 @@ void hdmi_common_init_panel_info(struct msm_panel_info *pinfo)
 	if (hdmi_prim_display)
 		pinfo->fb_num = 2;
 	else
-		pinfo->fb_num = 1;
+		pinfo->fb_num = 2;	// For HDMI Caption
+//		pinfo->fb_num = 1;	// Original
 
 	/* blk */
 	pinfo->lcdc.border_clr = 0;
-	/* blue */
-	pinfo->lcdc.underflow_clr = 0xff;
+	/* blue : 0xff, blk : 0*/
+	pinfo->lcdc.underflow_clr = 0; //0xff; The underflow color is changed from blue to black
 	pinfo->lcdc.hsync_skew = 0;
 }
 EXPORT_SYMBOL(hdmi_common_init_panel_info);
+
+#ifdef CONFIG_LGE_MHL_SII9244  /*                      */   /*                                        */
+void hdmi_common_send_uevent(char *buf)
+{
+	char *envp[2];
+	int env_offset = 0;
+
+	envp[env_offset++] = buf;
+	envp[env_offset] = NULL;
+
+	kobject_uevent_env(external_common_state->uevent_kobj,KOBJ_CHANGE, envp);
+}
+
+EXPORT_SYMBOL(hdmi_common_send_uevent);
+
+void hdmi_common_set_hpd(int on)
+{
+	if (external_common_state->hpd_feature) {
+		if (on) {
+			if(external_common_state->boot_completed){
+				DEV_DBG("%s : hpd_power_on \n",__func__);
+				external_common_state->hpd_feature(1);
+			}
+			external_common_state->hpd_feature_on = 1;
+
+		} else {
+			external_common_state->hpd_feature_on = 0;
+		}
+
+	} else {
+		DEV_DBG("%s: 'not supported'\n", __func__);
+	}
+}
+
+EXPORT_SYMBOL(hdmi_common_set_hpd);
+
+#endif  //                       
 #endif

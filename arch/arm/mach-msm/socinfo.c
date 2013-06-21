@@ -280,9 +280,6 @@ static enum msm_cpu cpu_of_id[] = {
 	[143] = MSM_CPU_8930AA,
 	[144] = MSM_CPU_8930AA,
 
-	/* 8064AB IDs */
-	[153] = MSM_CPU_8064AB,
-
 	/* Uninitialized IDs are not known to run Linux.
 	   MSM_CPU_UNKNOWN is set to 0 to ensure these IDs are
 	   considered as unknown CPU. */
@@ -294,6 +291,29 @@ static struct socinfo_v1 dummy_socinfo = {
 	.format = 1,
 	.version = 1,
 };
+
+/*                                   */
+#ifdef CONFIG_LGE_PM_BATTERY_ID_CHECKER /*                                        */
+u16 *batt_id = 0;
+uint16_t battery_info_get(void)
+{
+	batt_id = smem_alloc(SMEM_BATT_INFO, sizeof(batt_id));
+
+	if( batt_id == NULL ) return 0 ;
+	return *batt_id;
+}
+EXPORT_SYMBOL(battery_info_get);
+
+u16 *poweron_st = 0;
+uint16_t power_on_status_info_get(void)
+{
+	poweron_st = smem_alloc(SMEM_POWER_ON_STATUS_INFO, sizeof(poweron_st));
+
+	if( poweron_st == NULL ) return 0 ;
+	return *poweron_st;
+}
+EXPORT_SYMBOL(power_on_status_info_get);
+#endif
 
 uint32_t socinfo_get_id(void)
 {

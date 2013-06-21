@@ -17,6 +17,12 @@
 #ifndef __LINUX_MSM_AUDIO_H
 #define __LINUX_MSM_AUDIO_H
 
+#if defined (CONFIG_MACH_LGE_120_BOARD_KT)
+/* Copyright 2011 NXP Software, begin */
+#include <linux/time.h>
+#define LVVE
+/* Copyright 2011 NXP Software, end */
+#endif
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
@@ -96,6 +102,12 @@
 
 #define AUDIO_REGISTER_ION _IOW(AUDIO_IOCTL_MAGIC, 97, unsigned)
 #define AUDIO_DEREGISTER_ION _IOW(AUDIO_IOCTL_MAGIC, 98, unsigned)
+#ifdef LVVE
+/* Copyright 2011 NXP Software, begin */
+//#define AUDIO_PCM_HTIMESTAMP _IOR(AUDIO_IOCTL_MAGIC, 97, struct msm_audio_htimestamp)
+#define AUDIO_PCM_HTIMESTAMP _IOR(AUDIO_IOCTL_MAGIC, 99, struct msm_audio_htimestamp)
+/* Copyright 2011 NXP Software, end */
+#endif
 
 #define	AUDIO_MAX_COMMON_IOCTL_NUM	100
 
@@ -411,5 +423,13 @@ struct msm_acdb_cmd_device {
 	uint32_t     *phys_buf;           /* Physical Address of data */
 };
 
+#ifdef LVVE
+/* Copyright 2011 NXP Software, begin */
+struct msm_audio_htimestamp{
+	unsigned long   avail;
+	struct timespec time;
+};
+/* Copyright 2011 NXP Software, end */
+#endif
 
 #endif

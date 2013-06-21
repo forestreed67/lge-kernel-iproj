@@ -304,6 +304,8 @@ void mdp4_hw_init(void)
 
 	/* max read pending cmd config */
 	outpdw(MDP_BASE + 0x004c, 0x02222);	/* 3 pending requests */
+	outpdw(MDP_BASE + 0x0400, 0x7FF);
+	outpdw(MDP_BASE + 0x0404, 0x30050);
 
 #ifndef CONFIG_FB_MSM_OVERLAY
 	/* both REFRESH_MODE and DIRECT_OUT are ignored at BLT mode */
@@ -361,6 +363,7 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 	uint32 isr, mask, panel;
 	struct mdp_dma_data *dma;
 	struct mdp_hist_mgmt *mgmt = NULL;
+	char *base_addr;
 	int i, ret;
 
 	mdp_is_in_isr = TRUE;
@@ -388,7 +391,12 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 			mgmt = mdp_hist_mgmt_array[i];
 			if (!mgmt)
 				continue;
+			base_addr = MDP_BASE + mgmt->base;
+			MDP_OUTP(base_addr + 0x010, 1);
+			outpdw(base_addr + 0x01c, INTR_HIST_DONE |
+						INTR_HIST_RESET_SEQ_DONE);
 			mgmt->mdp_is_hist_valid = FALSE;
+			__mdp_histogram_reset(mgmt);
 		}
 	}
 
@@ -417,7 +425,7 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 			mdp4_dmap_done_dsi_cmd(0);
 #else
 		else { /* MDDI */
-			mdp4_dmap_done_mddi(0);
+			mdp4_dma_p_done_mddi(dma);
 			mdp_pipe_ctrl(MDP_DMA2_BLOCK,
 				MDP_BLOCK_POWER_OFF, TRUE);
 			complete(&dma->comp);
@@ -468,7 +476,7 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 				mdp4_overlay0_done_dsi_cmd(0);
 #else
 			if (panel & MDP4_PANEL_MDDI)
-				mdp4_overlay0_done_mddi(0);
+				mdp4_overlay0_done_mddi(dma);
 #endif
 		}
 		mdp_hw_cursor_done();
@@ -2546,7 +2554,13 @@ u32 mdp4_allocate_writeback_buf(struct msm_fb_data_type *mfd, u32 mix_num)
 		pr_info("%s:%d ion based allocation mfd->mem_hid 0x%x\n",
 			__func__, __LINE__, mfd->mem_hid);
 		buf->ihdl = ion_alloc(mfd->iclient, buffer_size, SZ_4K,
-			mfd->mem_hid);
+//                                                                                                              
+#if defined(CONFIG_MACH_LGE_325_BOARD_VZW)
+			(mfd->mem_hid | ION_SECURE));
+#else
+            mfd->mem_hid);
+#endif
+//                                                                                                              
 		if (!IS_ERR_OR_NULL(buf->ihdl)) {
 			if (mdp_iommu_split_domain) {
 				if (ion_map_iommu(mfd->iclient, buf->ihdl,
@@ -3215,6 +3229,20 @@ error:
 	return ret;
 }
 
+u32 mdp4_get_mixer_num(u32 panel_type)
+{
+        u32 mixer_num;
+        if ((panel_type == TV_PANEL) ||
+                        (panel_type == DTV_PANEL))
+                mixer_num = MDP4_MIXER1;
+        else if (panel_type == WRITEBACK_PANEL) {
+                mixer_num = MDP4_MIXER2;
+        } else {
+                mixer_num = MDP4_MIXER0;
+        }
+        return mixer_num;
+}
+
 #define QSEED_TABLE_1_COUNT	2
 #define QSEED_TABLE_2_COUNT	1024
 
@@ -3232,92 +3260,71 @@ static uint32_t mdp4_pp_block2qseed(uint32_t block)
 	return valid;
 }
 
-int mdp4_qseed_access_cfg(struct mdp_qseed_cfg *config, uint32_t base)
+static int mdp4_qseed_write_cfg(struct mdp_qseed_cfg_data *cfg)
 {
 	int i, ret = 0;
+	uint32_t base = (uint32_t) (MDP_BASE + mdp_block2base(cfg->block));
 	uint32_t *values;
 
-	if ((config->table_num != 1) && (config->table_num != 2)) {
+	if ((cfg->table_num != 1) && (cfg->table_num != 2)) {
 		ret = -ENOTTY;
 		goto error;
 	}
 
-	if (((config->table_num == 1) && (config->len != QSEED_TABLE_1_COUNT))
-			|| ((config->table_num == 2) &&
-				(config->len != QSEED_TABLE_2_COUNT))) {
+	if (((cfg->table_num == 1) && (cfg->len != QSEED_TABLE_1_COUNT)) ||
+		((cfg->table_num == 2) && (cfg->len != QSEED_TABLE_2_COUNT))) {
 		ret = -EINVAL;
 		goto error;
 	}
 
-	values = kmalloc(config->len * sizeof(uint32_t), GFP_KERNEL);
+	values = kmalloc(cfg->len * sizeof(uint32_t), GFP_KERNEL);
 	if (!values) {
 		ret = -ENOMEM;
 		goto error;
 	}
 
-	base += (config->table_num == 1) ? MDP4_QSEED_TABLE1_OFF :
-							MDP4_QSEED_TABLE2_OFF;
+	ret = copy_from_user(values, cfg->data, sizeof(uint32_t) * cfg->len);
 
-	if (config->ops & MDP_PP_OPS_WRITE) {
-		ret = copy_from_user(values, config->data,
-						sizeof(uint32_t) * config->len);
-		if (ret) {
-			pr_warn("%s: Error copying from user, %d", __func__,
-									ret);
-			ret = -EINVAL;
-			goto err_mem;
-		}
-		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-		for (i = 0; i < config->len; i++) {
-			if (!(base & 0x3FF))
-				wmb();
-			MDP_OUTP(base , values[i]);
-			base += sizeof(uint32_t);
-		}
-		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-	} else if (config->ops & MDP_PP_OPS_READ) {
-		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-		for (i = 0; i < config->len; i++) {
-			values[i] = inpdw(base);
-			if (!(base & 0x3FF))
-				rmb();
-			base += sizeof(uint32_t);
-		}
-		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-		ret = copy_to_user(config->data, values,
-						sizeof(uint32_t) * config->len);
-		if (ret) {
-			pr_warn("%s: Error copying to user, %d", __func__, ret);
-			ret = -EINVAL;
-			goto err_mem;
-		}
+	base += (cfg->table_num == 1) ? MDP4_QSEED_TABLE1_OFF :
+						MDP4_QSEED_TABLE2_OFF;
+	for (i = 0; i < cfg->len; i++) {
+		MDP_OUTP(base , values[i]);
+		base += sizeof(uint32_t);
 	}
 
-err_mem:
 	kfree(values);
 error:
 	return ret;
 }
 
-int mdp4_qseed_cfg(struct mdp_qseed_cfg_data *config)
+int mdp4_qseed_cfg(struct mdp_qseed_cfg_data *cfg)
 {
 	int ret = 0;
-	struct mdp_qseed_cfg *cfg = &config->qseed_data;
-	uint32_t base;
 
-	if (!mdp4_pp_block2qseed(config->block)) {
+	if (!mdp4_pp_block2qseed(cfg->block)) {
 		ret = -ENOTTY;
 		goto error;
 	}
 
-	if ((cfg->ops & MDP_PP_OPS_READ) && (cfg->ops & MDP_PP_OPS_WRITE)) {
-		ret = -EPERM;
-		pr_warn("%s: Cannot read and write on the same request\n",
-								__func__);
+	if (cfg->table_num != 1) {
+		ret = -ENOTTY;
+		pr_info("%s: Only QSEED table1 supported.\n", __func__);
 		goto error;
 	}
-	base = (uint32_t) (MDP_BASE + mdp_block2base(config->block));
-	ret = mdp4_qseed_access_cfg(cfg, base);
+
+	switch ((cfg->ops & 0x6) >> 1) {
+	case 0x1:
+		pr_info("%s: QSEED read not supported\n", __func__);
+		ret = -ENOTTY;
+		break;
+	case 0x2:
+		ret = mdp4_qseed_write_cfg(cfg);
+		if (ret)
+			goto error;
+		break;
+	default:
+		break;
+	}
 
 error:
 	return ret;

@@ -646,13 +646,12 @@ static void __init reserve_ion_memory(void)
 		msm8960_fmem_pdata.reserved_size_low = fixed_low_size +
 							HOLE_SIZE;
 		msm8960_fmem_pdata.reserved_size_high = fixed_high_size;
-		msm8960_fmem_pdata.size += HOLE_SIZE;
 	}
 
 	/* Since the fixed area may be carved out of lowmem,
 	 * make sure the length is a multiple of 1M.
 	 */
-	fixed_size = (fixed_size + HOLE_SIZE + SECTION_SIZE - 1)
+	fixed_size = (fixed_size + MSM_MM_FW_SIZE + SECTION_SIZE - 1)
 		& SECTION_MASK;
 	msm8960_reserve_fixed_area(fixed_size);
 
@@ -822,7 +821,7 @@ static void __init msm8960_reserve(void)
 #if defined(CONFIG_ION_MSM) && defined(CONFIG_MSM_MULTIMEDIA_USE_ION)
 		if (reserve_info->fixed_area_size) {
 			msm8960_fmem_pdata.phys =
-				reserve_info->fixed_area_start;
+				reserve_info->fixed_area_start + MSM_MM_FW_SIZE;
 			pr_info("mm fw at %lx (fixed) size %x\n",
 				reserve_info->fixed_area_start, MSM_MM_FW_SIZE);
 			pr_info("fmem start %lx (fixed) size %lx\n",
@@ -1294,7 +1293,6 @@ static struct mdm_platform_data sglte_platform_data = {
 	.peripheral_platform_device = NULL,
 	.ramdump_timeout_ms = 600000,
 	.no_powerdown_after_ramdumps = 1,
-	.image_upgrade_supported = 1,
 };
 
 #define MSM_TSIF0_PHYS			(0x18200000)
@@ -1420,7 +1418,7 @@ static void __init msm8960_init_buses(void)
 
 static struct msm_spi_platform_data msm8960_qup_spi_gsbi1_pdata = {
 	.max_clock_speed = 15060000,
-	.infinite_mode	 = 0xFFC0,
+	.infinite_mode	 = 1
 };
 
 #ifdef CONFIG_USB_MSM_OTG_72K
@@ -1429,7 +1427,7 @@ static struct msm_otg_platform_data msm_otg_pdata;
 static int wr_phy_init_seq[] = {
 	0x44, 0x80, /* set VBUS valid threshold
 			and disconnect valid threshold */
-	0x68, 0x81, /* update DC voltage level */
+	0x38, 0x81, /* update DC voltage level */
 	0x14, 0x82, /* set preemphasis and rise/fall time */
 	0x13, 0x83, /* set source impedance adjusment */
 	-1};
@@ -1437,7 +1435,7 @@ static int wr_phy_init_seq[] = {
 static int liquid_v1_phy_init_seq[] = {
 	0x44, 0x80,/* set VBUS valid threshold
 			and disconnect valid threshold */
-	0x6C, 0x81,/* update DC voltage level */
+	0x3C, 0x81,/* update DC voltage level */
 	0x18, 0x82,/* set preemphasis and rise/fall time */
 	0x23, 0x83,/* set source impedance sdjusment */
 	-1};
@@ -1481,8 +1479,6 @@ static struct msm_bus_scale_pdata usb_bus_scale_pdata = {
 };
 #endif
 
-#define MSM_MPM_PIN_USB1_OTGSESSVLD	40
-
 static struct msm_otg_platform_data msm_otg_pdata = {
 	.mode			= USB_OTG,
 	.otg_control		= OTG_PMIC_CONTROL,
@@ -1491,7 +1487,6 @@ static struct msm_otg_platform_data msm_otg_pdata = {
 	.power_budget		= 750,
 #ifdef CONFIG_MSM_BUS_SCALING
 	.bus_scale_table	= &usb_bus_scale_pdata,
-	.mpm_otgsessvld_int	= MSM_MPM_PIN_USB1_OTGSESSVLD,
 #endif
 };
 #endif
@@ -2639,7 +2634,6 @@ static struct platform_device *cdp_devices[] __initdata = {
 	&android_usb_device,
 	&msm_pcm,
 	&msm_multi_ch_pcm,
-	&msm_lowlatency_pcm,
 	&msm_pcm_routing,
 	&msm_cpudai0,
 	&msm_cpudai1,
@@ -2687,9 +2681,6 @@ static struct platform_device *cdp_devices[] __initdata = {
 
 static void __init msm8960_i2c_init(void)
 {
-	if (socinfo_get_platform_subtype() == PLATFORM_SUBTYPE_SGLTE)
-		msm8960_i2c_qup_gsbi4_pdata.keep_ahb_clk_on = 1;
-
 	msm8960_device_qup_i2c_gsbi4.dev.platform_data =
 					&msm8960_i2c_qup_gsbi4_pdata;
 

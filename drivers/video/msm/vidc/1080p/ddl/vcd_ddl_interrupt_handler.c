@@ -275,8 +275,8 @@ static u32 ddl_decoder_seq_done_callback(struct ddl_context *ddl_context,
 		}
 		vidc_sm_get_profile_info(&ddl->shared_mem
 			[ddl->command_channel], &disp_profile_info);
-		seq_hdr_info.profile = disp_profile_info.pic_profile;
-		seq_hdr_info.level = disp_profile_info.pic_level;
+		disp_profile_info.pic_profile = seq_hdr_info.profile;
+		disp_profile_info.pic_level = seq_hdr_info.level;
 		ddl_get_dec_profile_level(decoder, seq_hdr_info.profile,
 			seq_hdr_info.level);
 		switch (decoder->codec.codec) {
@@ -365,12 +365,16 @@ static u32 ddl_decoder_seq_done_callback(struct ddl_context *ddl_context,
 				ddl->command_channel);
 		} else {
 			u32 seq_hdr_only_frame = false;
-			u32 need_reconfig = false, eos_present = 0;
+			u32 need_reconfig = false;
 			struct vcd_frame_data *input_vcd_frm =
 				&ddl->input_frame.vcd_frm;
 			need_reconfig = ddl_check_reconfig(ddl);
 			DDL_MSG_HIGH("%s : need_reconfig = %u\n", __func__,
 				 need_reconfig);
+			if (input_vcd_frm->flags &
+				  VCD_FRAME_FLAG_EOS) {
+				need_reconfig = false;
+			}
 			if (((input_vcd_frm->flags &
 				VCD_FRAME_FLAG_CODECCONFIG) &&
 				(!(input_vcd_frm->flags &
@@ -381,25 +385,15 @@ static u32 ddl_decoder_seq_done_callback(struct ddl_context *ddl_context,
 				input_vcd_frm->offset +=
 					seq_hdr_info.dec_frm_size;
 				input_vcd_frm->data_len = 0;
-				eos_present =
-				input_vcd_frm->flags & VCD_FRAME_FLAG_EOS;
-				if (!eos_present) {
-					input_vcd_frm->flags |=
-						VCD_FRAME_FLAG_CODECCONFIG;
-					ddl->input_frame.frm_trans_end =
-						!need_reconfig;
-					ddl_context->ddl_callback(
+				input_vcd_frm->flags |=
+					VCD_FRAME_FLAG_CODECCONFIG;
+				ddl->input_frame.frm_trans_end =
+					!need_reconfig;
+				ddl_context->ddl_callback(
 					VCD_EVT_RESP_INPUT_DONE,
 					VCD_S_SUCCESS, &ddl->input_frame,
 					sizeof(struct ddl_frame_data_tag),
 					(u32 *) ddl, ddl->client_data);
-				} else {
-					input_vcd_frm->flags &=
-					~(VCD_FRAME_FLAG_CODECCONFIG);
-					seq_hdr_only_frame = false;
-					pr_err("%s() Codec config buffer with eos\n",
-						__func__);
-				}
 			} else {
 				if (decoder->codec.codec ==
 					VCD_CODEC_VC1_RCV) {
@@ -494,7 +488,6 @@ static u32 ddl_dpb_buffers_set_done_callback(
 				ddl_get_state_string(ddl->client_state));
 			ddl_calc_core_proc_time(__func__, DEC_OP_TIME, ddl);
 			ddl_reset_core_time_variables(DEC_OP_TIME);
-			ddl_vidc_decode_reset_avg_time(ddl);
 			ddl->client_state = DDL_CLIENT_WAIT_FOR_FRAME;
 			ddl_vidc_decode_frame_run(ddl);
 			ret_status = false;
@@ -1187,28 +1180,20 @@ static u32 ddl_decoder_output_done_callback(
 		&(decoder->dec_disp_info);
 	struct ddl_frame_data_tag *output_frame = &(ddl->output_frame);
 	struct vcd_frame_data *output_vcd_frm = &(output_frame->vcd_frm);
-	enum vidc_1080p_decode_frame frame_type = 0;
 	u32 vcd_status, free_luma_dpb = 0, disp_pict = 0, is_interlaced;
-	u32 idr_frame = 0, coded_frame = 0;
 	get_dec_op_done_data(dec_disp_info, decoder->output_order,
 		&output_vcd_frm->physical, &is_interlaced);
 	decoder->progressive_only = !(is_interlaced);
 	output_vcd_frm->frame = VCD_FRAME_YUV;
-	vidc_sm_get_displayed_picture_frame(&ddl->shared_mem
-		[ddl->command_channel], &disp_pict);
-	coded_frame = (disp_pict & 0x03);
-	idr_frame = (disp_pict & 0x20) >> 5;
-	if (idr_frame)
-		frame_type = VIDC_1080P_DECODE_FRAMETYPE_IDR;
-	else
-		frame_type = (disp_pict & 0x1c) >> 2;
 	if (decoder->codec.codec == VCD_CODEC_MPEG4 ||
 		decoder->codec.codec == VCD_CODEC_VC1 ||
 		decoder->codec.codec == VCD_CODEC_VC1_RCV ||
 		(decoder->codec.codec >= VCD_CODEC_DIVX_3 &&
 		decoder->codec.codec <= VCD_CODEC_XVID)) {
+		vidc_sm_get_displayed_picture_frame(&ddl->shared_mem
+		[ddl->command_channel], &disp_pict);
 		if (decoder->output_order == VCD_DEC_ORDER_DISPLAY) {
-			if (!coded_frame) {
+			if (!disp_pict) {
 				output_vcd_frm->frame = VCD_FRAME_NOTCODED;
 				vidc_sm_get_available_luma_dpb_address(
 					&ddl->shared_mem[ddl->command_channel],
@@ -1233,7 +1218,6 @@ static u32 ddl_decoder_output_done_callback(
 		DDL_MSG_ERROR("CORRUPTED_OUTPUT_BUFFER_ADDRESS");
 		ddl_hw_fatal_cb(ddl);
 	} else {
-		ddl_get_decoded_frame(output_vcd_frm, frame_type);
 		vidc_sm_get_metadata_status(&ddl->shared_mem
 			[ddl->command_channel],
 			&decoder->meta_data_exists);
@@ -1256,8 +1240,6 @@ static u32 ddl_decoder_output_done_callback(
 				output_vcd_frm->flags |=
 					VCD_FRAME_FLAG_DATACORRUPT;
 		}
-		if (decoder->codec.codec != VCD_CODEC_H264)
-			output_vcd_frm->flags &= ~VCD_FRAME_FLAG_DATACORRUPT;
 		output_vcd_frm->ip_frm_tag = dec_disp_info->tag_top;
 		vidc_sm_get_picture_times(&ddl->shared_mem
 			[ddl->command_channel],
@@ -1364,10 +1346,6 @@ static u32 ddl_get_decoded_frame(struct vcd_frame_data  *frame,
 	break;
 	case VIDC_1080P_DECODE_FRAMETYPE_OTHERS:
 		frame->frame = VCD_FRAME_YUV;
-	break;
-	case VIDC_1080P_DECODE_FRAMETYPE_IDR:
-		frame->flags |= VCD_FRAME_FLAG_SYNCFRAME;
-		frame->frame = VCD_FRAME_IDR;
 	break;
 	case VIDC_1080P_DECODE_FRAMETYPE_32BIT:
 	default:

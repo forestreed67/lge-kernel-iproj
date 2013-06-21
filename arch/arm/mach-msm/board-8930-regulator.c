@@ -30,7 +30,6 @@ VREG_CONSUMERS(L2) = {
 	REGULATOR_SUPPLY("8038_l2",		NULL),
 	REGULATOR_SUPPLY("iris_vdddig",		"wcnss_wlan.0"),
 	REGULATOR_SUPPLY("dsi_vdda",		"mipi_dsi.1"),
-	REGULATOR_SUPPLY("dsi_pll_vdda",	"mdp.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.1"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.2"),
@@ -100,9 +99,6 @@ VREG_CONSUMERS(L12) = {
 	REGULATOR_SUPPLY("cam_vdig",		"4-0048"),
 	REGULATOR_SUPPLY("cam_vdig",            "4-0020"),
 };
-VREG_CONSUMERS(L13) = {
-	REGULATOR_SUPPLY("8038_l13",		NULL),
-};
 VREG_CONSUMERS(L14) = {
 	REGULATOR_SUPPLY("8038_l14",		NULL),
 	REGULATOR_SUPPLY("pa_therm",		"pm8xxx-adc"),
@@ -142,7 +138,6 @@ VREG_CONSUMERS(L22) = {
 VREG_CONSUMERS(L23) = {
 	REGULATOR_SUPPLY("8038_l23",		NULL),
 	REGULATOR_SUPPLY("dsi_vddio",		"mipi_dsi.1"),
-	REGULATOR_SUPPLY("dsi_pll_vddio",	"mdp.0"),
 	REGULATOR_SUPPLY("hdmi_avdd",		"hdmi_msm.0"),
 	REGULATOR_SUPPLY("hdmi_vcc",		"hdmi_msm.0"),
 	REGULATOR_SUPPLY("pll_vdd",		"pil_riva"),
@@ -152,9 +147,6 @@ VREG_CONSUMERS(L23) = {
 VREG_CONSUMERS(L24) = {
 	REGULATOR_SUPPLY("8038_l24",		NULL),
 	REGULATOR_SUPPLY("riva_vddmx",		"wcnss_wlan.0"),
-};
-VREG_CONSUMERS(L25) = {
-	REGULATOR_SUPPLY("8038_l25",		NULL),
 };
 VREG_CONSUMERS(L26) = {
 	REGULATOR_SUPPLY("8038_l26",		NULL),
@@ -500,7 +492,6 @@ msm8930_rpm_regulator_init_data[] __devinitdata = {
 	RPM_LDO(L10,	 0, 1, 0, 2900000, 2900000, NULL,      0, 0),
 	RPM_LDO(L11,	 1, 1, 0, 1800000, 1800000, "8038_s4", 10000, 10000),
 	RPM_LDO(L12,	 0, 1, 0, 1200000, 1200000, "8038_s2", 0, 0),
-	RPM_LDO(L13,	 0, 0, 0, 2220000, 2220000, NULL,      0, 0),
 	RPM_LDO(L14,	 0, 1, 0, 1800000, 1800000, NULL,      0, 0),
 	RPM_LDO(L15,	 0, 1, 0, 1800000, 2950000, NULL,      0, 0),
 	RPM_LDO(L17,	 0, 1, 0, 1800000, 2950000, NULL,      0, 0),
@@ -510,7 +501,6 @@ msm8930_rpm_regulator_init_data[] __devinitdata = {
 	RPM_LDO(L22,	 1, 1, 0, 1850000, 2950000, NULL,      10000, 10000),
 	RPM_LDO(L23,	 1, 1, 1, 1800000, 1800000, "8038_s4", 0, 0),
 	RPM_LDO(L24,	 0, 1, 1,  500000, 1150000, "8038_s2", 10000, 10000),
-	RPM_LDO(L25,	 0, 0, 0, 1740000, 1740000, "8038_l13", 0, 0),
 	RPM_LDO(L26,     1, 1, 0, 1050000, 1050000, "8038_s2", 10000, 10000),
 
 	/*	ID     a_on pd ss		    supply */
